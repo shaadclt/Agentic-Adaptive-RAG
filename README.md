@@ -4,6 +4,8 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-enabled-green.svg)](https://langchain-ai.github.io/langgraph/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**Agentic Adaptive RAG is a production-ready framework for building self-correcting, reasoning-based LLM systems that dynamically choose between retrieval, web search, and generation.**
+
 > Build intelligent RAG systems that know when to retrieve documents, search the web, or generate responses directly
 
 An advanced Retrieval-Augmented Generation (RAG) system that intelligently integrates dynamic query analysis with self-correcting mechanisms to optimize response accuracy. Unlike traditional RAG approaches, this system adapts its strategy based on query complexity and context.
