@@ -26,7 +26,8 @@ The system implements three different retrieval strategies based on query comple
 - **Single-Step Retrieval**: For simple queries requiring document lookup
 - **Multi-Hop Retrieval**: For complex queries requiring reasoning across multiple sources
 
-![Adaptive RAG Workflow](static/Langgraph%20Adaptive%20Rag.png)
+<img width="2607" height="3575" alt="RAG Query Pipeline with-2025-12-31-083543" src="https://github.com/user-attachments/assets/937e752d-ce51-43e6-84a3-54eca371b6de" />
+
 
 ## 🚀 Quick Start
 
