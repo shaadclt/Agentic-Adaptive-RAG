@@ -1,59 +1,148 @@
-from pprint import pprint
-import pytest
-
 from dotenv import load_dotenv
 
-load_dotenv()
-
-from graph.chains.generation import generation_chain
-from graph.chains.hallucination_grader import (GradeHallucinations,hallucination_grader)
+from graph.chains.answer_grader import GradeAnswer, answer_grader
+from graph.chains.hallucination_grader import (
+    GradeHallucinations,
+    hallucination_grader,
+)
 from graph.chains.retrieval_grader import GradeDocuments, retrieval_grader
 from graph.chains.router import RouteQuery, question_router
-from ingestion import retriever
+
+
+load_dotenv()
 
 
 def test_retrieval_grader_answer_yes() -> None:
     question = "agent memory"
-    docs = retriever.invoke(question)
-    
-    doc_txt = docs[1].page_content
-    
+
+    document = """
+    Agent memory allows an AI agent to retain information from previous
+    interactions and use that information when making future decisions.
+    """
+
     res: GradeDocuments = retrieval_grader.invoke(
-        {"question": question, "document": doc_txt}
+        {
+            "question": question,
+            "document": document,
+        }
     )
-    
-    assert res.binary_score == "yes"
-    
+
+    assert res.binary_score.lower() == "yes"
+
+
 def test_retrieval_grader_answer_no() -> None:
     question = "agent memory"
-    docs = retriever.invoke(question)
-    
-    doc_txt = docs[0].page_content
-    
-    res: GradeHallucinations = hallucination_grader.invoke(
-        {"documents":docs,
-         "generation": "In order to make pizza we need to first start with the dough"}
+
+    document = """
+    Pizza dough is commonly made using flour, water, yeast, salt,
+    and sometimes olive oil.
+    """
+
+    res: GradeDocuments = retrieval_grader.invoke(
+        {
+            "question": question,
+            "document": document,
+        }
     )
-    
-    assert not res.binary_score
-    
-def test_router_to_vectostore() -> None:
-    question = "agent memory"
-    res: RouteQuery = question_router.invoke({"question": question})
-    
-    assert res.datasource == "vectostore"
-    
+
+    assert res.binary_score.lower() == "no"
+
+
+def test_hallucination_grader_grounded() -> None:
+    documents = [
+        """
+        Agent memory allows an agent to store information from previous
+        interactions and use it later.
+        """
+    ]
+
+    generation = """
+    Agent memory allows an agent to retain information from previous
+    interactions.
+    """
+
+    res: GradeHallucinations = hallucination_grader.invoke(
+        {
+            "documents": documents,
+            "generation": generation,
+        }
+    )
+
+    assert res.binary_score is True
+
+
+def test_hallucination_grader_not_grounded() -> None:
+    documents = [
+        """
+        Agent memory allows an agent to store information from previous
+        interactions.
+        """
+    ]
+
+    generation = """
+    Pizza was invented in Italy and is made using dough and tomato sauce.
+    """
+
+    res: GradeHallucinations = hallucination_grader.invoke(
+        {
+            "documents": documents,
+            "generation": generation,
+        }
+    )
+
+    assert res.binary_score is False
+
+
+def test_answer_grader_answers_question() -> None:
+    question = "What is agent memory?"
+
+    generation = """
+    Agent memory is a mechanism that allows an agent to retain
+    information from previous interactions.
+    """
+
+    res: GradeAnswer = answer_grader.invoke(
+        {
+            "question": question,
+            "generation": generation,
+        }
+    )
+
+    assert res.binary_score is True
+
+
+def test_answer_grader_does_not_answer_question() -> None:
+    question = "What is agent memory?"
+
+    generation = """
+    Pizza dough is usually made with flour, water, yeast, and salt.
+    """
+
+    res: GradeAnswer = answer_grader.invoke(
+        {
+            "question": question,
+            "generation": generation,
+        }
+    )
+
+    assert res.binary_score is False
+
+
+def test_router_to_vectorstore() -> None:
+    question = "What is agent memory?"
+
+    res: RouteQuery = question_router.invoke(
+        {"question": question}
+    )
+
+    assert res.datasource == "vectorstore"
+
+
 def test_router_to_websearch() -> None:
-    question = "how to make pizza"
-    
-    res: RouteQuery = question_router.invoke({"question": question})
-    
+    question = "How do I make pizza?"
+
+    res: RouteQuery = question_router.invoke(
+        {"question": question}
+    )
+
     assert res.datasource == "websearch"
-    
-"""
-This comprehensive test suite validates each component of our Agentic RAG system independently.
-The tests cover document relevance grading with both positive and negative cases, ensuring our grader correctly identifies relevant and irrelevant documents.
-The hallucination detection tests verify that our system can distinguish between grounded and fabricated responses.
-The router tests confirm that questions are correctly routed to vectorstore or web search based on their content.
-These tests will ensure that each component works correctly in isolation before integration into the complete workflow.
-"""
