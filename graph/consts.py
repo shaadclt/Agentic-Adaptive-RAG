@@ -2,6 +2,7 @@ RETRIEVE = "retrieve"
 GRADE_DOCUMENTS = "grade_documents"
 GENERATE = "generate"
 WEBSEARCH = "websearch"
+INCREMENT_RETRY = "increment_retry"
 
 """
 These constants define the names of our graph nodes and help maintain consistency throughout our codebase. 
