@@ -1,3 +1,4 @@
+```python
 import os
 
 from dotenv import load_dotenv
@@ -6,9 +7,12 @@ from langchain_google_genai import (
     GoogleGenerativeAIEmbeddings,
 )
 
-
 load_dotenv()
 
+
+# -----------------------------
+# LLM Configuration
+# -----------------------------
 
 LLM_MODEL = os.getenv(
     "LLM_MODEL",
@@ -22,11 +26,20 @@ LLM_TEMPERATURE = float(
     )
 )
 
+
+# -----------------------------
+# Embedding Configuration
+# -----------------------------
+
 EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL",
-    "models/text-embedding-004",
+    "gemini-embedding-001",
 )
 
+
+# -----------------------------
+# Google Gemini LLM
+# -----------------------------
 
 llm_model = ChatGoogleGenerativeAI(
     model=LLM_MODEL,
@@ -34,6 +47,10 @@ llm_model = ChatGoogleGenerativeAI(
     temperature=LLM_TEMPERATURE,
 )
 
+
+# -----------------------------
+# Google Gemini Embeddings
+# -----------------------------
 
 embed_model = GoogleGenerativeAIEmbeddings(
     model=EMBEDDING_MODEL,
