@@ -4,7 +4,7 @@ from langgraph.graph import END, StateGraph
 from graph.chains.answer_grader import answer_grader
 from graph.chains.hallucination_grader import hallucination_grader
 from graph.chains.router import RouteQuery, question_router
-from graph.consts import GENERATE, GRADE_DOCUMENTS, RETRIEVE, WEBSEARCH
+from graph.consts import GENERATE, GRADE_DOCUMENTS, RETRIEVE, WEBSEARCH, INCREMENT_RETRY
 from graph.nodes.generate import generate
 from graph.nodes.grade_documents import grade_documents
 from graph.nodes.retrieve import retrieve
@@ -77,7 +77,7 @@ def grade_generation_grounded_in_documents_and_question(
         )
         return "retry"
 
-    print("---DECISION: MAX RETRIES REACHED, USE WEB SEARCH---")
+    print("---DECISION: MAX RETRIES REACHED---")
     return "not useful"
 
 
@@ -116,6 +116,7 @@ workflow.add_node(RETRIEVE, retrieve)
 workflow.add_node(GRADE_DOCUMENTS, grade_documents)
 workflow.add_node(GENERATE, generate)
 workflow.add_node(WEBSEARCH, web_search)
+workflow.add_node(INCREMENT_RETRY, increment_retry)
 
 
 # Entry point
@@ -146,15 +147,17 @@ workflow.add_conditional_edges(
     GENERATE,
     grade_generation_grounded_in_documents_and_question,
     {
-        "retry": GENERATE,
+        "retry": INCREMENT_RETRY,
         "useful": END,
         "not useful": WEBSEARCH,
     },
 )
 
 
+
 # Web search always feeds generation
 workflow.add_edge(WEBSEARCH, GENERATE)
+workflow.add_edge(INCREMENT_RETRY, GENERATE)
 
 
 app = workflow.compile()
