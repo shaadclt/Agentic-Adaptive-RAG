@@ -2,44 +2,66 @@ from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import WebBaseLoader
+
 from model import embed_model
+
 
 load_dotenv()
 
-urls = [
+
+URLS = [
     "https://lilianweng.github.io/posts/2023-06-23-agent/",
     "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
     "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
 ]
 
-docs = [WebBaseLoader(url).load() for url in urls]
-docs_list = [item for sublist in docs for item in sublist]
-
-text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    chunk_size=250, chunk_overlap=0
-)
-
-doc_splits = text_splitter.split_documents(docs_list)
-
-embed = embed_model
-
-# Create vector store with documents
-vectorstore = Chroma.from_documents(
-    documents=doc_splits,
-    collection_name="rag-chroma",
-    embedding=embed,
-    persist_directory="./.chroma")
+CHROMA_PATH = "./.chroma"
+COLLECTION_NAME = "rag-chroma"
 
 
-# Create retriever
-retriever = vectorstore.as_retriever()
+def load_documents():
+    docs = []
+
+    for url in URLS:
+        loader = WebBaseLoader(url)
+        docs.extend(loader.load())
+
+    return docs
 
 
-"""
-This ingestion pipeline forms the backbone of our local knowledge base. 
-We start by loading environment variables, then define a curated list of URLs containing high-quality content about AI agents, prompt engineering, and adversarial attacks.
-The WebBaseLoader fetches content from these URLs and loads them into document objects. 
-We then use the RecursiveCharacterTextSplitter to break down these documents into smaller, manageable chunks of 250 tokens each, which is optimal for embedding and retrieval. 
-The splitter uses tiktoken encoding to ensure accurate token counting.
-Finally, we create a Chroma vector store that will persist our embeddings locally, using Google's text-embedding-004 model for high-quality semantic representations.
-"""
+def split_documents(documents):
+    text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=250,
+        chunk_overlap=0,
+    )
+
+    return text_splitter.split_documents(documents)
+
+
+def build_vectorstore():
+    print("---LOADING DOCUMENTS---")
+
+    documents = load_documents()
+
+    print(f"Loaded {len(documents)} source documents.")
+
+    print("---SPLITTING DOCUMENTS---")
+
+    document_chunks = split_documents(documents)
+
+    print(f"Created {len(document_chunks)} document chunks.")
+
+    print("---BUILDING CHROMA VECTOR STORE---")
+
+    Chroma.from_documents(
+        documents=document_chunks,
+        collection_name=COLLECTION_NAME,
+        embedding=embed_model,
+        persist_directory=CHROMA_PATH,
+    )
+
+    print("---VECTOR STORE CREATED---")
+
+
+if __name__ == "__main__":
+    build_vectorstore()
