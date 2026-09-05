@@ -1,11 +1,8 @@
-```python
 import os
 
 from dotenv import load_dotenv
-from langchain_google_genai import (
-    ChatGoogleGenerativeAI,
-    GoogleGenerativeAIEmbeddings,
-)
+from langchain_groq import ChatGroq
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 load_dotenv()
 
@@ -16,7 +13,7 @@ load_dotenv()
 
 LLM_MODEL = os.getenv(
     "LLM_MODEL",
-    "gemini-1.5-flash",
+    "openai/gpt-oss-120b",
 )
 
 LLM_TEMPERATURE = float(
@@ -38,12 +35,12 @@ EMBEDDING_MODEL = os.getenv(
 
 
 # -----------------------------
-# Google Gemini LLM
+# Groq LLM
 # -----------------------------
 
-llm_model = ChatGoogleGenerativeAI(
+llm_model = ChatGroq(
     model=LLM_MODEL,
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    api_key=os.getenv("GROQ_API_KEY"),
     temperature=LLM_TEMPERATURE,
 )
 
