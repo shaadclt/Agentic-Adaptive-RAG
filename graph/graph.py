@@ -10,6 +10,7 @@ from graph.nodes.grade_documents import grade_documents
 from graph.nodes.retrieve import retrieve
 from graph.nodes.web_search import web_search
 from graph.state import GraphState
+from graph.nodes.increment_retry import increment_retry
 
 
 load_dotenv()
