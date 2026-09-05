@@ -17,10 +17,7 @@ def generate(state: GraphState) -> Dict[str, Any]:
         }
     )
 
-    retry_count = state.get("retry_count", 0)
-
     return {
         "generation": generation,
         "question": question,
-        "retry_count": retry_count + 1,
     }
