@@ -17,6 +17,8 @@ retriever = vectorstore.as_retriever(
 
 
 def has_documents() -> bool:
-    """Return True when the local knowledge base contains documents."""
+    """
+    Return True when the local knowledge base contains documents.
+    """
     result = vectorstore.get(include=["metadatas"])
     return bool(result.get("ids"))
