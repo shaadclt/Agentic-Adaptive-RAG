@@ -25,12 +25,30 @@ load_dotenv()
 MAX_GENERATION_RETRIES = 2
 
 
-def decide_to_generate(state: GraphState) -> str:
+def normalize_binary_score(value) -> bool:
     """
-    Decide whether to generate an answer or perform a web search
-    after local document grading.
+    Normalize grader outputs to a Python boolean.
+
+    Graders may return:
+        True / False
+        "yes" / "no"
+        "true" / "false"
     """
 
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "yes",
+            "true",
+            "1",
+        }
+
+    return bool(value)
+
+
+def decide_to_generate(state: GraphState) -> str:
     print("---ASSESS GRADED DOCUMENTS---")
 
     if state.get("web_search", False):
@@ -47,21 +65,6 @@ def decide_to_generate(state: GraphState) -> str:
 def grade_generation_grounded_in_documents_and_question(
     state: GraphState,
 ) -> str:
-    """
-    Evaluate the generated answer for:
-
-    1. Grounding in the retrieved documents.
-    2. Relevance to the user's question.
-
-    If the answer is not grounded, retry generation up to the
-    configured maximum. Once the retry limit is reached, fall
-    back to web search.
-
-    Returns:
-        "retry"      -> retry generation
-        "useful"     -> answer is grounded and relevant
-        "not useful" -> answer should be replaced using web search
-    """
 
     print("---CHECK HALLUCINATIONS---")
 
@@ -69,35 +72,64 @@ def grade_generation_grounded_in_documents_and_question(
     documents = state.get("documents", [])
     generation = state.get("generation", "")
 
-    hallucination_score = hallucination_grader.invoke(
+    # -----------------------------------
+    # Hallucination / grounding check
+    # -----------------------------------
+
+    score = hallucination_grader.invoke(
         {
             "documents": documents,
             "generation": generation,
         }
     )
 
-    if hallucination_score.binary_score.lower() == "yes":
-        print("---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---")
+    grounded = normalize_binary_score(
+        score.binary_score
+    )
+
+    if grounded:
+        print(
+            "---DECISION: GENERATION IS GROUNDED "
+            "IN DOCUMENTS---"
+        )
+
+        # -----------------------------------
+        # Answer quality check
+        # -----------------------------------
+
         print("---GRADE GENERATION VS QUESTION---")
 
-        answer_score = answer_grader.invoke(
+        score = answer_grader.invoke(
             {
                 "question": question,
                 "generation": generation,
             }
         )
 
-        if answer_score.binary_score.lower() == "yes":
-            print("---DECISION: GENERATION ADDRESSES QUESTION---")
+        useful = normalize_binary_score(
+            score.binary_score
+        )
+
+        if useful:
+            print(
+                "---DECISION: GENERATION ADDRESSES "
+                "QUESTION---"
+            )
             return "useful"
 
         print(
-            "---DECISION: GENERATION DOES NOT ADDRESS QUESTION---"
+            "---DECISION: GENERATION DOES NOT "
+            "ADDRESS QUESTION---"
         )
         return "not useful"
 
+    # -----------------------------------
+    # Generation is not grounded
+    # -----------------------------------
+
     print(
-        "---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS---"
+        "---DECISION: GENERATION IS NOT "
+        "GROUNDED IN DOCUMENTS---"
     )
 
     retry_count = state.get("retry_count", 0)
@@ -110,20 +142,19 @@ def grade_generation_grounded_in_documents_and_question(
         return "retry"
 
     print("---DECISION: MAX RETRIES REACHED---")
+
     return "not useful"
 
 
 def route_question(state: GraphState) -> str:
-    """
-    Route the question to either local RAG or web search.
-    """
-
     print("---ROUTE QUESTION---")
 
     question = state["question"]
 
     source: RouteQuery = question_router.invoke(
-        {"question": question}
+        {
+            "question": question,
+        }
     )
 
     if source.datasource == WEBSEARCH:
@@ -140,27 +171,38 @@ def route_question(state: GraphState) -> str:
     )
 
 
-# -------------------------------------------------------------------
-# Graph definition
-# -------------------------------------------------------------------
+# -----------------------------------
+# Build Graph
+# -----------------------------------
 
 workflow = StateGraph(GraphState)
 
 
-# -------------------------------------------------------------------
-# Nodes
-# -------------------------------------------------------------------
+workflow.add_node(
+    RETRIEVE,
+    retrieve,
+)
 
-workflow.add_node(RETRIEVE, retrieve)
-workflow.add_node(GRADE_DOCUMENTS, grade_documents)
-workflow.add_node(GENERATE, generate)
-workflow.add_node(WEBSEARCH, web_search)
-workflow.add_node(INCREMENT_RETRY, increment_retry)
+workflow.add_node(
+    GRADE_DOCUMENTS,
+    grade_documents,
+)
 
+workflow.add_node(
+    GENERATE,
+    generate,
+)
 
-# -------------------------------------------------------------------
-# Entry point
-# -------------------------------------------------------------------
+workflow.add_node(
+    WEBSEARCH,
+    web_search,
+)
+
+workflow.add_node(
+    INCREMENT_RETRY,
+    increment_retry,
+)
+
 
 workflow.set_conditional_entry_point(
     route_question,
@@ -171,14 +213,11 @@ workflow.set_conditional_entry_point(
 )
 
 
-# -------------------------------------------------------------------
-# Local RAG path
-# -------------------------------------------------------------------
-
 workflow.add_edge(
     RETRIEVE,
     GRADE_DOCUMENTS,
 )
+
 
 workflow.add_conditional_edges(
     GRADE_DOCUMENTS,
@@ -189,10 +228,6 @@ workflow.add_conditional_edges(
     },
 )
 
-
-# -------------------------------------------------------------------
-# Generation quality gate
-# -------------------------------------------------------------------
 
 workflow.add_conditional_edges(
     GENERATE,
@@ -205,28 +240,16 @@ workflow.add_conditional_edges(
 )
 
 
-# -------------------------------------------------------------------
-# Web search path
-# -------------------------------------------------------------------
-
 workflow.add_edge(
     WEBSEARCH,
     GENERATE,
 )
 
 
-# -------------------------------------------------------------------
-# Retry path
-# -------------------------------------------------------------------
-
 workflow.add_edge(
     INCREMENT_RETRY,
     GENERATE,
 )
 
-
-# -------------------------------------------------------------------
-# Compile graph
-# -------------------------------------------------------------------
 
 app = workflow.compile()
