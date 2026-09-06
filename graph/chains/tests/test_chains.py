@@ -129,7 +129,7 @@ def test_answer_grader_does_not_answer_question() -> None:
 
 
 def test_router_to_vectorstore() -> None:
-    question = "What is agent memory?"
+    question = "What information is available in my uploaded documents?"
 
     res: RouteQuery = question_router.invoke(
         {"question": question}
