@@ -295,3 +295,5 @@ tokens.json
 # Docker
 .dockerignore
 docker-compose.override.yml
+data/documents/chroma.txt
+data/documents/test.txt
