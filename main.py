@@ -7,6 +7,8 @@ from ingestion import (
     list_documents,
 )
 
+from sources import extract_sources
+
 
 def print_menu() -> None:
     print()
@@ -203,39 +205,71 @@ def ask_question() -> None:
     print("=" * 60)
     print("ANSWER")
     print("=" * 60)
-    print(result.get("generation", "No answer generated."))
 
-    documents = result.get("documents", [])
+    print(
+        result.get(
+            "generation",
+            "No answer generated.",
+        )
+    )
 
-    if documents:
+    documents = result.get(
+        "documents",
+        [],
+    )
+
+    sources = extract_sources(documents)
+
+    if sources:
         print()
-        print("--- SOURCES ---")
+        print("=" * 60)
+        print("SOURCES")
+        print("=" * 60)
 
-        displayed_sources = set()
+        local_sources = [
+            source
+            for source in sources
+            if source["type"] == "local"
+        ]
 
-        for document in documents:
-            metadata = document.metadata
+        web_sources = [
+            source
+            for source in sources
+            if source["type"] == "web"
+        ]
 
-            source = metadata.get(
-                "file_name"
-            ) or metadata.get(
-                "title"
-            ) or metadata.get(
-                "source",
-                "Unknown",
-            )
+        if local_sources:
+            print()
+            print("Local documents:")
 
-            if source in displayed_sources:
-                continue
+            for source in local_sources:
+                print(
+                    f"- {source['file_name']}"
+                )
 
-            displayed_sources.add(source)
+        if web_sources:
+            print()
+            print("Web sources:")
 
-            print(f"- {source}")
+            for source in web_sources:
+                title = source.get(
+                    "title",
+                    "Web source",
+                )
 
-            url = metadata.get("url")
+                url = source.get(
+                    "url",
+                    "",
+                )
 
-            if url:
-                print(f"  {url}")
+                print(f"- {title}")
+
+                if url:
+                    print(f"  {url}")
+
+    else:
+        print()
+        print("---NO SOURCES AVAILABLE---")
 
     print("=" * 60)
 
