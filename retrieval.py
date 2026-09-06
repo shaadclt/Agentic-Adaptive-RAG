@@ -1,10 +1,11 @@
 from langchain_chroma import Chroma
 
+from config import (
+    CHROMA_PATH,
+    COLLECTION_NAME,
+    RETRIEVAL_K,
+)
 from model import embed_model
-
-
-CHROMA_PATH = "./.chroma"
-COLLECTION_NAME = "rag-chroma"
 
 
 vectorstore = Chroma(
@@ -14,4 +15,8 @@ vectorstore = Chroma(
 )
 
 
-retriever = vectorstore.as_retriever()
+retriever = vectorstore.as_retriever(
+    search_kwargs={
+        "k": RETRIEVAL_K,
+    }
+)
