@@ -36,16 +36,14 @@ There are two possible data sources:
      the user's uploaded documents.
 
 2. websearch
-   - Used when the question requires external, current, or general
-     information that is unlikely to be available in the user's
-     uploaded documents.
+   - Used for current, external, or general information that is
+     unlikely to be available in the user's uploaded documents.
 
-Important:
-- Prefer the vectorstore when the question relates to the user's
-  uploaded knowledge.
-- Use websearch for current information, general knowledge, or topics
-  clearly outside the user's uploaded knowledge.
-- Do not assume that the vectorstore contains only a fixed set of topics.
+Prefer the vectorstore when the question relates to the user's
+uploaded knowledge.
+
+Use websearch when the question clearly requires external or
+current information.
 """
 
 
@@ -61,17 +59,15 @@ question_router = route_prompt | structured_llm_router
 
 
 """
-The query router is the system's first decision point that determines
-the optimal source for answering a user's question.
+The query router is the system's first decision point.
 
-A RouteQuery Pydantic model constrains the router's output to either
-"vectorstore" or "websearch", providing reliable structured parsing.
+A RouteQuery Pydantic model constrains the router output to either
+"vectorstore" or "websearch".
 
-The router is intentionally designed to prefer user-provided knowledge
-when appropriate, while allowing web search for questions requiring
-external or current information.
+The graph gives priority to user-provided knowledge when a local
+knowledge base exists. The router remains available as a fallback
+decision mechanism when no local knowledge base is available.
 
-The graph subsequently validates retrieved documents. If the local
-documents are not relevant to the question, the workflow falls back
-to web search.
+If local retrieval produces documents that are not relevant to the
+question, the graph automatically falls back to web search.
 """
