@@ -3,7 +3,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from graph.graph import app
-from ingestion import build_vectorstore
+from ingestion import (
+    build_vectorstore,
+    list_documents,
+)
 
 
 load_dotenv()
@@ -19,7 +22,7 @@ SUPPORTED_EXTENSIONS = {
 
 def format_response(result):
     """
-    Format the response from the graph for better readability.
+    Format the response from the graph.
     """
 
     if isinstance(result, dict) and "generation" in result:
@@ -31,11 +34,11 @@ def format_response(result):
     return str(result)
 
 
-def parse_file_paths(user_input: str) -> list[Path]:
+def parse_file_paths(
+    user_input: str,
+) -> list[Path]:
     """
-    Parse one or more file paths entered by the user.
-
-    Paths can be separated by commas.
+    Parse comma-separated file paths.
     """
 
     raw_paths = [
@@ -44,14 +47,17 @@ def parse_file_paths(user_input: str) -> list[Path]:
         if path.strip()
     ]
 
-    return [Path(path) for path in raw_paths]
+    return [
+        Path(path)
+        for path in raw_paths
+    ]
 
 
 def validate_file_paths(
     file_paths: list[Path],
 ) -> list[Path]:
     """
-    Validate that all supplied files exist and are supported.
+    Validate supplied document paths.
     """
 
     valid_files = []
@@ -70,7 +76,10 @@ def validate_file_paths(
             )
             continue
 
-        if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        if (
+            file_path.suffix.lower()
+            not in SUPPORTED_EXTENSIONS
+        ):
             print(
                 f"❌ Unsupported file type: "
                 f"{file_path.suffix}"
@@ -81,14 +90,16 @@ def validate_file_paths(
             )
             continue
 
-        valid_files.append(file_path)
+        valid_files.append(
+            file_path
+        )
 
     return valid_files
 
 
 def ingest_documents():
     """
-    Ask the user for document paths and ingest them.
+    Ask for document paths and ingest them.
     """
 
     print("\n" + "=" * 60)
@@ -100,19 +111,8 @@ def ingest_documents():
     )
 
     print(
-        "\nEnter one or more file paths."
-    )
-
-    print(
-        "For multiple files, separate paths with commas."
-    )
-
-    print(
-        "\nExample:"
-    )
-
-    print(
-        r'C:\docs\manual.pdf, C:\docs\policy.docx'
+        "\nFor multiple files, separate paths "
+        "with commas."
     )
 
     user_input = input(
@@ -125,7 +125,9 @@ def ingest_documents():
         )
         return
 
-    file_paths = parse_file_paths(user_input)
+    file_paths = parse_file_paths(
+        user_input
+    )
 
     valid_files = validate_file_paths(
         file_paths
@@ -138,27 +140,91 @@ def ingest_documents():
         return
 
     print(
-        f"\nFound {len(valid_files)} valid "
-        f"document(s)."
+        f"\nFound {len(valid_files)} "
+        f"valid document(s)."
     )
 
     try:
-        build_vectorstore(valid_files)
+
+        build_vectorstore(
+            valid_files
+        )
 
         print(
-            "\n✅ Document ingestion completed successfully."
+            "\n✅ Document ingestion completed."
         )
 
     except Exception as error:
+
         print(
             "\n❌ Document ingestion failed:"
         )
-        print(f"   {error}")
+
+        print(
+            f"   {error}"
+        )
+
+
+def show_documents():
+    """
+    Display documents currently in the
+    knowledge base.
+    """
+
+    print("\n" + "=" * 60)
+    print("📚 KNOWLEDGE BASE")
+    print("=" * 60)
+
+    try:
+
+        documents = list_documents()
+
+        if not documents:
+
+            print(
+                "\nNo documents found."
+            )
+            return
+
+        print(
+            f"\nKnowledge base contains "
+            f"{len(documents)} document(s):\n"
+        )
+
+        for index, document in enumerate(
+            documents,
+            start=1,
+        ):
+
+            print(
+                f"{index}. "
+                f"{document['file_name']}"
+            )
+
+            print(
+                f"   Type: "
+                f"{document['file_type']}"
+            )
+
+            print(
+                f"   Source: "
+                f"{document['source']}"
+            )
+
+    except Exception as error:
+
+        print(
+            "\n❌ Could not read knowledge base:"
+        )
+
+        print(
+            f"   {error}"
+        )
 
 
 def ask_question():
     """
-    Ask the user a question and run the RAG graph.
+    Ask a question and run the RAG graph.
     """
 
     print("\n" + "=" * 60)
@@ -170,6 +236,7 @@ def ask_question():
     ).strip()
 
     if not user_question:
+
         print(
             "\n❌ Please enter a question."
         )
@@ -180,29 +247,33 @@ def ask_question():
     )
 
     try:
+
         result = app.invoke(
             input={
                 "question": user_question,
             }
         )
 
-        response = format_response(result)
+        response = format_response(
+            result
+        )
 
         print(
             f"\n🤖 Bot: {response}"
         )
 
     except Exception as error:
+
         print(
             "\n❌ Sorry, I encountered an error:"
         )
-        print(f"   {error}")
+
+        print(
+            f"   {error}"
+        )
 
 
 def show_menu():
-    """
-    Display the main application menu.
-    """
 
     print("\n" + "=" * 60)
     print("🤖 AGENTIC ADAPTIVE RAG")
@@ -213,11 +284,15 @@ def show_menu():
     )
 
     print(
-        "2. Ask a question"
+        "2. View knowledge base"
     )
 
     print(
-        "3. Exit"
+        "3. Ask a question"
+    )
+
+    print(
+        "4. Exit"
     )
 
 
@@ -232,8 +307,8 @@ def main():
     )
 
     print(
-        "You can add your own documents and "
-        "ask questions about them."
+        "You can add documents, inspect the "
+        "knowledge base, and ask questions."
     )
 
     while True:
@@ -241,6 +316,7 @@ def main():
         show_menu()
 
         try:
+
             choice = input(
                 "\nSelect an option: "
             ).strip()
@@ -251,13 +327,18 @@ def main():
 
             elif choice == "2":
 
-                ask_question()
+                show_documents()
 
             elif choice == "3":
+
+                ask_question()
+
+            elif choice == "4":
 
                 print(
                     "\n👋 Goodbye!"
                 )
+
                 break
 
             else:
@@ -266,21 +347,19 @@ def main():
                     "\n❌ Invalid option."
                 )
 
-                print(
-                    "Please choose 1, 2, or 3."
-                )
-
         except KeyboardInterrupt:
 
             print(
                 "\n\n👋 Goodbye!"
             )
+
             break
 
         except Exception as error:
 
             print(
-                f"\n❌ Unexpected error: {error}"
+                f"\n❌ Unexpected error: "
+                f"{error}"
             )
 
 
