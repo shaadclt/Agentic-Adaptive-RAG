@@ -5,6 +5,8 @@ from graph.state import GraphState
 
 
 def generate(state: GraphState) -> Dict[str, Any]:
+    """Generate an answer from the retrieved documents."""
+
     print("---GENERATE---")
 
     question = state["question"]
@@ -20,4 +22,5 @@ def generate(state: GraphState) -> Dict[str, Any]:
     return {
         "generation": generation,
         "question": question,
+        "documents": documents,
     }
