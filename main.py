@@ -1,366 +1,271 @@
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from graph.graph import app
 from ingestion import (
     build_vectorstore,
+    delete_document,
     list_documents,
 )
 
 
-load_dotenv()
+def print_menu() -> None:
+    print()
+    print("=" * 60)
+    print("        AGENTIC-ADAPTIVE-RAG")
+    print("=" * 60)
+    print("1. Add documents")
+    print("2. View knowledge base")
+    print("3. Remove document")
+    print("4. Ask a question")
+    print("5. Exit")
+    print("=" * 60)
 
 
-SUPPORTED_EXTENSIONS = {
-    ".pdf",
-    ".docx",
-    ".txt",
-    ".md",
-}
+def add_documents() -> None:
+    print()
+    print("--- ADD DOCUMENTS ---")
 
+    raw_paths = input(
+        "Enter file paths separated by commas: "
+    ).strip()
 
-def format_response(result):
-    """
-    Format the response from the graph.
-    """
+    if not raw_paths:
+        print("---NO FILES PROVIDED---")
+        return
 
-    if isinstance(result, dict) and "generation" in result:
-        return result["generation"]
-
-    if isinstance(result, dict) and "answer" in result:
-        return result["answer"]
-
-    return str(result)
-
-
-def parse_file_paths(
-    user_input: str,
-) -> list[Path]:
-    """
-    Parse comma-separated file paths.
-    """
-
-    raw_paths = [
+    file_paths = [
         path.strip().strip('"')
-        for path in user_input.split(",")
+        for path in raw_paths.split(",")
         if path.strip()
     ]
 
-    return [
-        Path(path)
-        for path in raw_paths
-    ]
-
-
-def validate_file_paths(
-    file_paths: list[Path],
-) -> list[Path]:
-    """
-    Validate supplied document paths.
-    """
-
-    valid_files = []
+    valid_paths = []
 
     for file_path in file_paths:
+        path = Path(file_path)
 
-        if not file_path.exists():
+        if not path.exists():
             print(
-                f"❌ File not found: {file_path}"
+                f"---FILE NOT FOUND: {file_path}---"
             )
             continue
 
-        if not file_path.is_file():
+        if path.suffix.lower() not in {
+            ".pdf",
+            ".docx",
+            ".txt",
+            ".md",
+        }:
             print(
-                f"❌ Not a file: {file_path}"
+                f"---UNSUPPORTED FILE TYPE: {path.name}---"
             )
             continue
 
-        if (
-            file_path.suffix.lower()
-            not in SUPPORTED_EXTENSIONS
-        ):
-            print(
-                f"❌ Unsupported file type: "
-                f"{file_path.suffix}"
-            )
-            print(
-                "   Supported types: "
-                "PDF, DOCX, TXT, MD"
-            )
-            continue
+        valid_paths.append(str(path))
 
-        valid_files.append(
-            file_path
+    if not valid_paths:
+        print("---NO VALID DOCUMENTS---")
+        return
+
+    print()
+    print(
+        f"Found {len(valid_paths)} valid document(s)."
+    )
+
+    build_vectorstore(valid_paths)
+
+
+def view_knowledge_base() -> None:
+    print()
+    print("--- KNOWLEDGE BASE ---")
+
+    documents = list_documents()
+
+    if not documents:
+        print("---KNOWLEDGE BASE IS EMPTY---")
+        return
+
+    print(
+        f"Documents in knowledge base: "
+        f"{len(documents)}"
+    )
+    print()
+
+    for index, document in enumerate(
+        documents,
+        start=1,
+    ):
+        print(
+            f"[{index}] "
+            f"{document['file_name']}"
         )
 
-    return valid_files
+        print(
+            f"    Type: "
+            f"{document['file_type']}"
+        )
+
+        print(
+            f"    ID: "
+            f"{document['document_id']}"
+        )
+
+        print(
+            f"    Source: "
+            f"{document['source']}"
+        )
+
+        print()
 
 
-def ingest_documents():
-    """
-    Ask for document paths and ingest them.
-    """
+def remove_document() -> None:
+    print()
+    print("--- REMOVE DOCUMENT ---")
 
-    print("\n" + "=" * 60)
-    print("📚 ADD DOCUMENTS")
-    print("=" * 60)
+    documents = list_documents()
 
-    print(
-        "\nSupported formats: PDF, DOCX, TXT, MD"
-    )
+    if not documents:
+        print("---KNOWLEDGE BASE IS EMPTY---")
+        return
 
-    print(
-        "\nFor multiple files, separate paths "
-        "with commas."
-    )
+    for index, document in enumerate(
+        documents,
+        start=1,
+    ):
+        print(
+            f"{index}. "
+            f"{document['file_name']}"
+        )
 
-    user_input = input(
-        "\n📄 File path(s): "
+    print()
+
+    choice = input(
+        "Enter document number to remove: "
     ).strip()
 
-    if not user_input:
-        print(
-            "\n❌ No file paths provided."
-        )
+    if not choice.isdigit():
+        print("---INVALID SELECTION---")
         return
 
-    file_paths = parse_file_paths(
-        user_input
-    )
+    index = int(choice)
 
-    valid_files = validate_file_paths(
-        file_paths
-    )
-
-    if not valid_files:
-        print(
-            "\n❌ No valid documents to ingest."
-        )
+    if index < 1 or index > len(documents):
+        print("---INVALID DOCUMENT NUMBER---")
         return
 
-    print(
-        f"\nFound {len(valid_files)} "
-        f"valid document(s)."
+    document = documents[index - 1]
+
+    confirm = input(
+        f"Remove '{document['file_name']}'? "
+        "[y/N]: "
+    ).strip().lower()
+
+    if confirm != "y":
+        print("---REMOVAL CANCELLED---")
+        return
+
+    deleted = delete_document(
+        document["document_id"]
     )
 
-    try:
-
-        build_vectorstore(
-            valid_files
-        )
-
+    if deleted:
         print(
-            "\n✅ Document ingestion completed."
+            f"---REMOVED: "
+            f"{document['file_name']}---"
         )
-
-    except Exception as error:
-
-        print(
-            "\n❌ Document ingestion failed:"
-        )
-
-        print(
-            f"   {error}"
-        )
+    else:
+        print("---DOCUMENT NOT FOUND---")
 
 
-def show_documents():
-    """
-    Display documents currently in the
-    knowledge base.
-    """
+def ask_question() -> None:
+    print()
+    print("--- ASK A QUESTION ---")
 
-    print("\n" + "=" * 60)
-    print("📚 KNOWLEDGE BASE")
-    print("=" * 60)
-
-    try:
-
-        documents = list_documents()
-
-        if not documents:
-
-            print(
-                "\nNo documents found."
-            )
-            return
-
-        print(
-            f"\nKnowledge base contains "
-            f"{len(documents)} document(s):\n"
-        )
-
-        for index, document in enumerate(
-            documents,
-            start=1,
-        ):
-
-            print(
-                f"{index}. "
-                f"{document['file_name']}"
-            )
-
-            print(
-                f"   Type: "
-                f"{document['file_type']}"
-            )
-
-            print(
-                f"   Source: "
-                f"{document['source']}"
-            )
-
-    except Exception as error:
-
-        print(
-            "\n❌ Could not read knowledge base:"
-        )
-
-        print(
-            f"   {error}"
-        )
-
-
-def ask_question():
-    """
-    Ask a question and run the RAG graph.
-    """
-
-    print("\n" + "=" * 60)
-    print("💬 ASK A QUESTION")
-    print("=" * 60)
-
-    user_question = input(
-        "\n💬 You: "
+    question = input(
+        "Question: "
     ).strip()
 
-    if not user_question:
-
-        print(
-            "\n❌ Please enter a question."
-        )
+    if not question:
+        print("---QUESTION CANNOT BE EMPTY---")
         return
 
-    print(
-        "\n🤔 Bot: Thinking..."
+    print()
+    print("---PROCESSING QUESTION---")
+
+    result = app.invoke(
+        {
+            "question": question,
+            "retry_count": 0,
+        }
     )
 
-    try:
+    print()
+    print("=" * 60)
+    print("ANSWER")
+    print("=" * 60)
+    print(result.get("generation", "No answer generated."))
 
-        result = app.invoke(
-            input={
-                "question": user_question,
-            }
-        )
+    documents = result.get("documents", [])
 
-        response = format_response(
-            result
-        )
+    if documents:
+        print()
+        print("--- SOURCES ---")
 
-        print(
-            f"\n🤖 Bot: {response}"
-        )
+        displayed_sources = set()
 
-    except Exception as error:
+        for document in documents:
+            metadata = document.metadata
 
-        print(
-            "\n❌ Sorry, I encountered an error:"
-        )
+            source = metadata.get(
+                "file_name"
+            ) or metadata.get(
+                "title"
+            ) or metadata.get(
+                "source",
+                "Unknown",
+            )
 
-        print(
-            f"   {error}"
-        )
+            if source in displayed_sources:
+                continue
 
+            displayed_sources.add(source)
 
-def show_menu():
+            print(f"- {source}")
 
-    print("\n" + "=" * 60)
-    print("🤖 AGENTIC ADAPTIVE RAG")
+            url = metadata.get("url")
+
+            if url:
+                print(f"  {url}")
+
     print("=" * 60)
 
-    print(
-        "\n1. Add documents"
-    )
 
-    print(
-        "2. View knowledge base"
-    )
-
-    print(
-        "3. Ask a question"
-    )
-
-    print(
-        "4. Exit"
-    )
-
-
-def main():
-
-    print("=" * 60)
-    print("🤖 Agentic Adaptive RAG")
-    print("=" * 60)
-
-    print(
-        "\nWelcome to the Agentic Adaptive RAG system!"
-    )
-
-    print(
-        "You can add documents, inspect the "
-        "knowledge base, and ask questions."
-    )
-
+def main() -> None:
     while True:
+        print_menu()
 
-        show_menu()
+        choice = input(
+            "Select an option: "
+        ).strip()
 
-        try:
+        if choice == "1":
+            add_documents()
 
-            choice = input(
-                "\nSelect an option: "
-            ).strip()
+        elif choice == "2":
+            view_knowledge_base()
 
-            if choice == "1":
+        elif choice == "3":
+            remove_document()
 
-                ingest_documents()
+        elif choice == "4":
+            ask_question()
 
-            elif choice == "2":
-
-                show_documents()
-
-            elif choice == "3":
-
-                ask_question()
-
-            elif choice == "4":
-
-                print(
-                    "\n👋 Goodbye!"
-                )
-
-                break
-
-            else:
-
-                print(
-                    "\n❌ Invalid option."
-                )
-
-        except KeyboardInterrupt:
-
-            print(
-                "\n\n👋 Goodbye!"
-            )
-
+        elif choice == "5":
+            print("---GOODBYE---")
             break
 
-        except Exception as error:
-
-            print(
-                f"\n❌ Unexpected error: "
-                f"{error}"
-            )
+        else:
+            print("---INVALID OPTION---")
 
 
 if __name__ == "__main__":
