@@ -25,6 +25,7 @@ def make_document(
 # 1. Local RAG path
 # ---------------------------------------------------------------------------
 
+
 def test_local_rag_path():
     """Question routed to vectorstore should follow the local RAG path."""
 
@@ -61,6 +62,7 @@ def test_local_rag_path():
     )
 
     with (
+        patch("graph.graph.has_documents", return_value=True),
         patch("graph.graph.question_router", mock_router),
         patch("graph.nodes.retrieve.retriever", mock_retriever),
         patch(
@@ -91,7 +93,7 @@ def test_local_rag_path():
     assert result["web_search"] is False
     assert len(result["documents"]) == 1
 
-    mock_router.invoke.assert_called_once()
+    mock_router.invoke.assert_not_called()
     mock_retriever.invoke.assert_called_once()
     mock_retrieval_grader.invoke.assert_called_once()
     mock_generation_chain.invoke.assert_called_once()
@@ -102,6 +104,7 @@ def test_local_rag_path():
 # ---------------------------------------------------------------------------
 # 2. Retrieval falls back to web search
 # ---------------------------------------------------------------------------
+
 
 def test_retrieval_falls_back_to_web_search():
     """
@@ -157,6 +160,7 @@ def test_retrieval_falls_back_to_web_search():
     )
 
     with (
+        patch("graph.graph.has_documents", return_value=True),
         patch("graph.graph.question_router", mock_router),
         patch("graph.nodes.retrieve.retriever", mock_retriever),
         patch(
@@ -198,6 +202,8 @@ def test_retrieval_falls_back_to_web_search():
         "https://example.com/rag"
     )
 
+    mock_router.invoke.assert_not_called()
+    mock_retriever.invoke.assert_called_once()
     mock_retrieval_grader.invoke.assert_called_once()
     mock_web_search.invoke.assert_called_once()
     mock_generation_chain.invoke.assert_called_once()
@@ -206,6 +212,7 @@ def test_retrieval_falls_back_to_web_search():
 # ---------------------------------------------------------------------------
 # 3. Direct web-search route
 # ---------------------------------------------------------------------------
+
 
 def test_direct_web_search_route():
     """Questions routed directly to web search should skip retrieval."""
@@ -245,6 +252,7 @@ def test_direct_web_search_route():
     )
 
     with (
+        patch("graph.graph.has_documents", return_value=False),
         patch("graph.graph.question_router", mock_router),
         patch(
             "graph.nodes.web_search.web_search_tool",
@@ -278,13 +286,14 @@ def test_direct_web_search_route():
     mock_web_search.invoke.assert_called_once()
 
     # Retrieval should not be involved in a direct web-search route.
-    # Since it is not patched here, this also ensures the route doesn't
-    # unexpectedly execute the local retriever.
+    # Since the local retriever is not patched here, this also ensures
+    # that the route does not unexpectedly execute local retrieval.
 
 
 # ---------------------------------------------------------------------------
 # 4. Generation retries when answer is not grounded
 # ---------------------------------------------------------------------------
+
 
 def test_generation_retries_when_not_grounded():
     """
@@ -327,6 +336,7 @@ def test_generation_retries_when_not_grounded():
     )
 
     with (
+        patch("graph.graph.has_documents", return_value=True),
         patch("graph.graph.question_router", mock_router),
         patch("graph.nodes.retrieve.retriever", mock_retriever),
         patch(
@@ -365,6 +375,7 @@ def test_generation_retries_when_not_grounded():
 # 5. Generation quality gate respects retry limit
 # ---------------------------------------------------------------------------
 
+
 def test_generation_quality_gate_respects_retry_limit():
     """
     Once MAX_GENERATION_RETRIES has been reached, another hallucination
@@ -397,6 +408,7 @@ def test_generation_quality_gate_respects_retry_limit():
 # ---------------------------------------------------------------------------
 # 6. Generation not useful when answer doesn't address question
 # ---------------------------------------------------------------------------
+
 
 def test_generation_not_useful_when_answer_does_not_address_question():
     """
@@ -443,6 +455,7 @@ def test_generation_not_useful_when_answer_does_not_address_question():
 # 7. Quality gate handles uppercase YES
 # ---------------------------------------------------------------------------
 
+
 def test_generation_quality_gate_handles_uppercase_yes():
     """
     Grader responses should be treated case-insensitively.
@@ -481,3 +494,91 @@ def test_generation_quality_gate_handles_uppercase_yes():
 
     mock_hallucination_grader.invoke.assert_called_once()
     mock_answer_grader.invoke.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 8. Local knowledge takes priority over router decision
+# ---------------------------------------------------------------------------
+
+
+def test_local_knowledge_takes_priority_over_router():
+    """
+    When the local knowledge base exists, the graph should retrieve locally
+    even if the LLM router would have selected web search.
+    """
+
+    mock_router = MagicMock()
+    mock_router.invoke.return_value = SimpleNamespace(
+        datasource="websearch"
+    )
+
+    mock_retriever = MagicMock()
+    mock_retriever.invoke.return_value = [
+        make_document(
+            "Chroma is used as the vector database for storing "
+            "and retrieving document embeddings.",
+            source="local",
+        )
+    ]
+
+    mock_retrieval_grader = MagicMock()
+    mock_retrieval_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_generation_chain = MagicMock()
+    mock_generation_chain.invoke.return_value = (
+        "Chroma is used as the vector database for storing "
+        "and retrieving document embeddings."
+    )
+
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    with (
+        patch("graph.graph.has_documents", return_value=True),
+        patch("graph.graph.question_router", mock_router),
+        patch("graph.nodes.retrieve.retriever", mock_retriever),
+        patch(
+            "graph.nodes.grade_documents.retrieval_grader",
+            mock_retrieval_grader,
+        ),
+        patch(
+            "graph.nodes.generate.generation_chain",
+            mock_generation_chain,
+        ),
+        patch(
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
+        ),
+        patch("graph.graph.answer_grader", mock_answer_grader),
+    ):
+        result = app.invoke(
+            {
+                "question": "What is Chroma used for?",
+                "retry_count": 0,
+            }
+        )
+
+    assert result["generation"] == (
+        "Chroma is used as the vector database for storing "
+        "and retrieving document embeddings."
+    )
+
+    assert result["web_search"] is False
+    assert len(result["documents"]) == 1
+
+    mock_retriever.invoke.assert_called_once()
+
+    # The LLM router should not be needed when local knowledge exists.
+    mock_router.invoke.assert_not_called()
+
+    mock_retrieval_grader.invoke.assert_called_once()
+    mock_generation_chain.invoke.assert_called_once()
