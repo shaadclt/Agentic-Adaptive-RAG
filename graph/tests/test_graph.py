@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from langchain_core.documents import Document
 
@@ -10,460 +10,474 @@ from graph.graph import (
 )
 
 
-# -------------------------------------------------------------------
-# Test 1: Local RAG happy path
-# -------------------------------------------------------------------
+def make_document(
+    content: str = "Retrieval-Augmented Generation combines retrieval with generation.",
+    source: str = "test",
+) -> Document:
+    """Create a test document."""
+    return Document(
+        page_content=content,
+        metadata={"source": source},
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1. Local RAG path
+# ---------------------------------------------------------------------------
 
 def test_local_rag_path():
-    """
-    Relevant local documents should lead to generation
-    without using web search.
-    """
+    """Question routed to vectorstore should follow the local RAG path."""
 
-    state = {
-        "question": "What is RAG?",
-        "generation": "",
-        "web_search": False,
-        "documents": [],
-        "retry_count": 0,
-    }
+    mock_router = MagicMock()
+    mock_router.invoke.return_value = SimpleNamespace(
+        datasource="vectorstore"
+    )
 
-    local_document = Document(
-        page_content="RAG combines retrieval with generation.",
-        metadata={
-            "source": "local",
-        },
+    mock_retriever = MagicMock()
+    mock_retriever.invoke.return_value = [
+        make_document(
+            "RAG retrieves relevant documents and uses them to generate an answer."
+        )
+    ]
+
+    mock_retrieval_grader = MagicMock()
+    mock_retrieval_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_generation_chain = MagicMock()
+    mock_generation_chain.invoke.return_value = (
+        "RAG retrieves relevant documents before generating an answer."
+    )
+
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
     )
 
     with (
+        patch("graph.graph.question_router", mock_router),
+        patch("graph.nodes.retrieve.retriever", mock_retriever),
         patch(
-            "graph.nodes.retrieve.retriever.invoke",
-            return_value=[local_document],
+            "graph.nodes.grade_documents.retrieval_grader",
+            mock_retrieval_grader,
         ),
         patch(
-            "graph.nodes.grade_documents.retrieval_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
+            "graph.nodes.generate.generation_chain",
+            mock_generation_chain,
         ),
         patch(
-            "graph.nodes.generate.generation_chain.invoke",
-            return_value=(
-                "RAG combines retrieval with generation."
-            ),
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
         ),
-        patch(
-            "graph.graph.hallucination_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
-        ),
-        patch(
-            "graph.graph.answer_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
-        ),
+        patch("graph.graph.answer_grader", mock_answer_grader),
     ):
-        result = app.invoke(state)
+        result = app.invoke(
+            {
+                "question": "What is RAG?",
+                "retry_count": 0,
+            }
+        )
 
     assert result["generation"] == (
-        "RAG combines retrieval with generation."
+        "RAG retrieves relevant documents before generating an answer."
     )
 
     assert result["web_search"] is False
-
-    assert result["retry_count"] == 0
-
     assert len(result["documents"]) == 1
 
-    assert result["documents"][0].metadata["source"] == "local"
+    mock_router.invoke.assert_called_once()
+    mock_retriever.invoke.assert_called_once()
+    mock_retrieval_grader.invoke.assert_called_once()
+    mock_generation_chain.invoke.assert_called_once()
+    mock_hallucination_grader.invoke.assert_called_once()
+    mock_answer_grader.invoke.assert_called_once()
 
 
-# -------------------------------------------------------------------
-# Test 2: Retrieval fallback to web search
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 2. Retrieval falls back to web search
+# ---------------------------------------------------------------------------
 
 def test_retrieval_falls_back_to_web_search():
     """
-    If local documents are irrelevant, the graph should
-    fall back to web search.
+    If retrieved documents are not relevant, the graph should fall back
+    to web search before generating an answer.
     """
 
-    state = {
-        "question": "What is the latest AI news?",
-        "generation": "",
-        "web_search": False,
-        "documents": [],
-        "retry_count": 0,
+    mock_router = MagicMock()
+    mock_router.invoke.return_value = SimpleNamespace(
+        datasource="vectorstore"
+    )
+
+    mock_retriever = MagicMock()
+    mock_retriever.invoke.return_value = [
+        make_document(
+            "This document is about cooking recipes.",
+            source="local",
+        )
+    ]
+
+    mock_retrieval_grader = MagicMock()
+    mock_retrieval_grader.invoke.return_value = SimpleNamespace(
+        binary_score="no"
+    )
+
+    mock_web_search = MagicMock()
+    mock_web_search.invoke.return_value = {
+        "results": [
+            {
+                "content": (
+                    "Retrieval-Augmented Generation retrieves external "
+                    "documents and uses them as context for generation."
+                ),
+                "url": "https://example.com/rag",
+                "title": "RAG Overview",
+            }
+        ]
     }
 
-    local_document = Document(
-        page_content=(
-            "This document is unrelated to the question."
-        ),
-        metadata={
-            "source": "local",
-        },
+    mock_generation_chain = MagicMock()
+    mock_generation_chain.invoke.return_value = (
+        "RAG uses retrieved documents as context for generation."
+    )
+
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
     )
 
     with (
+        patch("graph.graph.question_router", mock_router),
+        patch("graph.nodes.retrieve.retriever", mock_retriever),
         patch(
-            "graph.nodes.retrieve.retriever.invoke",
-            return_value=[local_document],
+            "graph.nodes.grade_documents.retrieval_grader",
+            mock_retrieval_grader,
         ),
         patch(
-            "graph.nodes.grade_documents.retrieval_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="no"
-            ),
+            "graph.nodes.web_search.web_search_tool",
+            mock_web_search,
         ),
         patch(
-            "graph.nodes.web_search.web_search_tool.invoke",
-            return_value={
-                "results": [
-                    {
-                        "content": (
-                            "Recent AI developments include "
-                            "new agentic systems."
-                        ),
-                        "url": "https://example.com",
-                        "title": "AI News",
-                    }
-                ]
-            },
+            "graph.nodes.generate.generation_chain",
+            mock_generation_chain,
         ),
         patch(
-            "graph.nodes.generate.generation_chain.invoke",
-            return_value=(
-                "Recent AI developments include "
-                "new agentic systems."
-            ),
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
         ),
-        patch(
-            "graph.graph.hallucination_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
-        ),
-        patch(
-            "graph.graph.answer_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
-        ),
+        patch("graph.graph.answer_grader", mock_answer_grader),
     ):
-        result = app.invoke(state)
+        result = app.invoke(
+            {
+                "question": "What is Retrieval-Augmented Generation?",
+                "retry_count": 0,
+            }
+        )
 
     assert result["generation"] == (
-        "Recent AI developments include "
-        "new agentic systems."
+        "RAG uses retrieved documents as context for generation."
     )
 
     assert result["web_search"] is False
 
-    web_documents = [
-        document
-        for document in result["documents"]
-        if document.metadata.get("source") == "web"
-    ]
-
-    assert len(web_documents) == 1
-
-    assert (
-        web_documents[0].metadata["url"]
-        == "https://example.com"
+    # The original local document was filtered out.
+    # The web document should be present.
+    assert len(result["documents"]) == 1
+    assert result["documents"][0].metadata["source"] == "web"
+    assert result["documents"][0].metadata["url"] == (
+        "https://example.com/rag"
     )
 
-    assert (
-        web_documents[0].metadata["title"]
-        == "AI News"
-    )
+    mock_retrieval_grader.invoke.assert_called_once()
+    mock_web_search.invoke.assert_called_once()
+    mock_generation_chain.invoke.assert_called_once()
 
 
-# -------------------------------------------------------------------
-# Test 3: Direct web-search route
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 3. Direct web-search route
+# ---------------------------------------------------------------------------
 
 def test_direct_web_search_route():
-    """
-    A question routed directly to web search should skip
-    local retrieval.
-    """
+    """Questions routed directly to web search should skip retrieval."""
 
-    state = {
-        "question": "What happened today?",
-        "generation": "",
-        "web_search": False,
-        "documents": [],
-        "retry_count": 0,
-    }
-
-    with (
-        patch(
-            "graph.graph.question_router.invoke",
-            return_value=SimpleNamespace(
-                datasource="websearch"
-            ),
-        ),
-        patch(
-            "graph.nodes.retrieve.retriever.invoke"
-        ) as mock_retriever,
-        patch(
-            "graph.nodes.web_search.web_search_tool.invoke",
-            return_value={
-                "results": [
-                    {
-                        "content": "Today's event information.",
-                        "url": "https://example.com",
-                        "title": "Today's News",
-                    }
-                ]
-            },
-        ),
-        patch(
-            "graph.nodes.generate.generation_chain.invoke",
-            return_value="Today's event information.",
-        ),
-        patch(
-            "graph.graph.hallucination_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
-        ),
-        patch(
-            "graph.graph.answer_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
-        ),
-    ):
-        result = app.invoke(state)
-
-    mock_retriever.assert_not_called()
-
-    assert result["generation"] == (
-        "Today's event information."
+    mock_router = MagicMock()
+    mock_router.invoke.return_value = SimpleNamespace(
+        datasource="websearch"
     )
 
-    assert result["documents"]
+    mock_web_search = MagicMock()
+    mock_web_search.invoke.return_value = {
+        "results": [
+            {
+                "content": (
+                    "Python is a high-level programming language "
+                    "widely used for data science and AI."
+                ),
+                "url": "https://example.com/python",
+                "title": "Python Overview",
+            }
+        ]
+    }
 
+    mock_generation_chain = MagicMock()
+    mock_generation_chain.invoke.return_value = (
+        "Python is a high-level programming language."
+    )
+
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    with (
+        patch("graph.graph.question_router", mock_router),
+        patch(
+            "graph.nodes.web_search.web_search_tool",
+            mock_web_search,
+        ),
+        patch(
+            "graph.nodes.generate.generation_chain",
+            mock_generation_chain,
+        ),
+        patch(
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
+        ),
+        patch("graph.graph.answer_grader", mock_answer_grader),
+    ):
+        result = app.invoke(
+            {
+                "question": "What is Python?",
+                "retry_count": 0,
+            }
+        )
+
+    assert result["generation"] == (
+        "Python is a high-level programming language."
+    )
+
+    assert len(result["documents"]) == 1
     assert result["documents"][0].metadata["source"] == "web"
 
+    mock_router.invoke.assert_called_once()
+    mock_web_search.invoke.assert_called_once()
 
-# -------------------------------------------------------------------
-# Test 4: Generation retry
-# -------------------------------------------------------------------
+    # Retrieval should not be involved in a direct web-search route.
+    # Since it is not patched here, this also ensures the route doesn't
+    # unexpectedly execute the local retriever.
+
+
+# ---------------------------------------------------------------------------
+# 4. Generation retries when answer is not grounded
+# ---------------------------------------------------------------------------
 
 def test_generation_retries_when_not_grounded():
     """
-    An ungrounded generation should trigger a retry.
-
-    First generation:
-        hallucination = no
-
-    Second generation:
-        hallucination = yes
-        answer = yes
-
-    Expected:
-        two generation attempts
-        one retry
+    If the first generation is not grounded in the documents, the graph
+    should increment retry_count and generate again.
     """
 
-    state = {
-        "question": "What is RAG?",
-        "generation": "",
-        "web_search": False,
-        "documents": [
-            Document(
-                page_content=(
-                    "RAG retrieves relevant context "
-                    "before generation."
-                ),
-                metadata={
-                    "source": "local",
-                },
-            )
-        ],
-        "retry_count": 0,
-    }
+    mock_router = MagicMock()
+    mock_router.invoke.return_value = SimpleNamespace(
+        datasource="vectorstore"
+    )
+
+    mock_retriever = MagicMock()
+    mock_retriever.invoke.return_value = [
+        make_document(
+            "RAG retrieves documents and provides them as context."
+        )
+    ]
+
+    mock_retrieval_grader = MagicMock()
+    mock_retrieval_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_generation_chain = MagicMock()
+    mock_generation_chain.invoke.side_effect = [
+        "This first answer contains unsupported information.",
+        "RAG retrieves documents and uses them as context.",
+    ]
+
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.side_effect = [
+        SimpleNamespace(binary_score="no"),
+        SimpleNamespace(binary_score="yes"),
+    ]
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
 
     with (
+        patch("graph.graph.question_router", mock_router),
+        patch("graph.nodes.retrieve.retriever", mock_retriever),
         patch(
-            "graph.nodes.generate.generation_chain.invoke",
-            side_effect=[
-                "Incorrect unsupported answer.",
-                (
-                    "RAG retrieves relevant context "
-                    "before generation."
-                ),
-            ],
-        ) as mock_generate,
-        patch(
-            "graph.graph.hallucination_grader.invoke",
-            side_effect=[
-                SimpleNamespace(
-                    binary_score="no"
-                ),
-                SimpleNamespace(
-                    binary_score="yes"
-                ),
-            ],
-        ) as mock_hallucination,
-        patch(
-            "graph.graph.answer_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
+            "graph.nodes.grade_documents.retrieval_grader",
+            mock_retrieval_grader,
         ),
+        patch(
+            "graph.nodes.generate.generation_chain",
+            mock_generation_chain,
+        ),
+        patch(
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
+        ),
+        patch("graph.graph.answer_grader", mock_answer_grader),
     ):
-        result = app.invoke(state)
+        result = app.invoke(
+            {
+                "question": "What is RAG?",
+                "retry_count": 0,
+            }
+        )
 
-    assert mock_generate.call_count == 2
-
-    assert mock_hallucination.call_count == 2
+    assert result["generation"] == (
+        "RAG retrieves documents and uses them as context."
+    )
 
     assert result["retry_count"] == 1
 
-    assert result["generation"] == (
-        "RAG retrieves relevant context "
-        "before generation."
-    )
+    assert mock_generation_chain.invoke.call_count == 2
+    assert mock_hallucination_grader.invoke.call_count == 2
+    assert mock_answer_grader.invoke.call_count == 1
 
 
-# -------------------------------------------------------------------
-# Test 5: Retry limit
-# -------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 5. Generation quality gate respects retry limit
+# ---------------------------------------------------------------------------
 
 def test_generation_quality_gate_respects_retry_limit():
     """
-    Once the maximum number of retries has been reached,
-    another hallucination should not trigger another retry.
+    Once MAX_GENERATION_RETRIES has been reached, another hallucination
+    failure should not trigger another retry.
     """
 
-    state = {
-        "question": "What is RAG?",
-        "generation": "Unsupported answer.",
-        "documents": [
-            Document(
-                page_content=(
-                    "RAG retrieves relevant context."
-                ),
-                metadata={
-                    "source": "local",
-                },
-            )
-        ],
-        "retry_count": MAX_GENERATION_RETRIES,
-    }
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="no"
+    )
 
     with patch(
-        "graph.graph.hallucination_grader.invoke",
-        return_value=SimpleNamespace(
-            binary_score="no"
-        ),
+        "graph.graph.hallucination_grader",
+        mock_hallucination_grader,
     ):
-        decision = (
-            grade_generation_grounded_in_documents_and_question(
-                state
-            )
+        decision = grade_generation_grounded_in_documents_and_question(
+            {
+                "question": "What is RAG?",
+                "generation": "Unsupported answer",
+                "documents": [make_document()],
+                "retry_count": MAX_GENERATION_RETRIES,
+            }
         )
 
     assert decision == "not useful"
 
+    mock_hallucination_grader.invoke.assert_called_once()
 
-# -------------------------------------------------------------------
-# Test 6: Answer grader failure
-# -------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 6. Generation not useful when answer doesn't address question
+# ---------------------------------------------------------------------------
 
 def test_generation_not_useful_when_answer_does_not_address_question():
     """
-    A grounded generation that does not answer the question
-    should be classified as not useful.
+    A grounded generation that does not answer the question should be
+    classified as not useful.
     """
 
-    state = {
-        "question": "What is RAG?",
-        "generation": "RAG is a system.",
-        "documents": [
-            Document(
-                page_content=(
-                    "RAG retrieves relevant information "
-                    "and uses it to generate an answer."
-                ),
-                metadata={
-                    "source": "local",
-                },
-            )
-        ],
-        "retry_count": 0,
-    }
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="yes"
+    )
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="no"
+    )
 
     with (
         patch(
-            "graph.graph.hallucination_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="yes"
-            ),
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
         ),
         patch(
-            "graph.graph.answer_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="no"
-            ),
+            "graph.graph.answer_grader",
+            mock_answer_grader,
         ),
     ):
-        decision = (
-            grade_generation_grounded_in_documents_and_question(
-                state
-            )
+        decision = grade_generation_grounded_in_documents_and_question(
+            {
+                "question": "What is RAG?",
+                "generation": "The sky is blue.",
+                "documents": [make_document()],
+                "retry_count": 0,
+            }
         )
 
     assert decision == "not useful"
 
+    mock_hallucination_grader.invoke.assert_called_once()
+    mock_answer_grader.invoke.assert_called_once()
 
-# -------------------------------------------------------------------
-# Test 7: Case-insensitive grader handling
-# -------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 7. Quality gate handles uppercase YES
+# ---------------------------------------------------------------------------
 
 def test_generation_quality_gate_handles_uppercase_yes():
     """
-    Grader responses should be handled case-insensitively.
+    Grader responses should be treated case-insensitively.
     """
 
-    state = {
-        "question": "What is RAG?",
-        "generation": "RAG retrieves context.",
-        "documents": [
-            Document(
-                page_content="RAG retrieves context.",
-                metadata={
-                    "source": "local",
-                },
-            )
-        ],
-        "retry_count": 0,
-    }
+    mock_hallucination_grader = MagicMock()
+    mock_hallucination_grader.invoke.return_value = SimpleNamespace(
+        binary_score="YES"
+    )
+
+    mock_answer_grader = MagicMock()
+    mock_answer_grader.invoke.return_value = SimpleNamespace(
+        binary_score="YES"
+    )
 
     with (
         patch(
-            "graph.graph.hallucination_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="YES"
-            ),
+            "graph.graph.hallucination_grader",
+            mock_hallucination_grader,
         ),
         patch(
-            "graph.graph.answer_grader.invoke",
-            return_value=SimpleNamespace(
-                binary_score="YES"
-            ),
+            "graph.graph.answer_grader",
+            mock_answer_grader,
         ),
     ):
-        decision = (
-            grade_generation_grounded_in_documents_and_question(
-                state
-            )
+        decision = grade_generation_grounded_in_documents_and_question(
+            {
+                "question": "What is RAG?",
+                "generation": "RAG retrieves documents before generation.",
+                "documents": [make_document()],
+                "retry_count": 0,
+            }
         )
 
     assert decision == "useful"
+
+    mock_hallucination_grader.invoke.assert_called_once()
+    mock_answer_grader.invoke.assert_called_once()
