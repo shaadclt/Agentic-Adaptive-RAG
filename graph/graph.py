@@ -17,6 +17,7 @@ from graph.nodes.increment_retry import increment_retry
 from graph.nodes.retrieve import retrieve
 from graph.nodes.web_search import web_search
 from graph.state import GraphState
+from retrieval import has_documents
 
 
 load_dotenv()
@@ -33,6 +34,7 @@ def normalize_binary_score(value) -> bool:
         True / False
         "yes" / "no"
         "true" / "false"
+        "1" / "0"
     """
 
     if isinstance(value, bool):
@@ -65,7 +67,6 @@ def decide_to_generate(state: GraphState) -> str:
 def grade_generation_grounded_in_documents_and_question(
     state: GraphState,
 ) -> str:
-
     print("---CHECK HALLUCINATIONS---")
 
     question = state["question"]
@@ -83,9 +84,7 @@ def grade_generation_grounded_in_documents_and_question(
         }
     )
 
-    grounded = normalize_binary_score(
-        score.binary_score
-    )
+    grounded = normalize_binary_score(score.binary_score)
 
     if grounded:
         print(
@@ -106,9 +105,7 @@ def grade_generation_grounded_in_documents_and_question(
             }
         )
 
-        useful = normalize_binary_score(
-            score.binary_score
-        )
+        useful = normalize_binary_score(score.binary_score)
 
         if useful:
             print(
@@ -147,9 +144,36 @@ def grade_generation_grounded_in_documents_and_question(
 
 
 def route_question(state: GraphState) -> str:
+    """
+    Route a question based on whether local user-provided knowledge
+    is available.
+
+    When the knowledge base contains documents, retrieval is always
+    attempted first. The document grading stage decides whether web
+    search is required.
+
+    When the knowledge base is empty, the LLM router decides between
+    vectorstore and web search.
+    """
+
     print("---ROUTE QUESTION---")
 
     question = state["question"]
+
+    # -------------------------------------------------
+    # Local knowledge takes priority when available.
+    # -------------------------------------------------
+
+    if has_documents():
+        print("---LOCAL KNOWLEDGE BASE AVAILABLE---")
+        print("---ROUTE QUESTION TO RAG---")
+        return RETRIEVE
+
+    # -------------------------------------------------
+    # No local knowledge: let the LLM router decide.
+    # -------------------------------------------------
+
+    print("---LOCAL KNOWLEDGE BASE EMPTY---")
 
     source: RouteQuery = question_router.invoke(
         {
