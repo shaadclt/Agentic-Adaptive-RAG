@@ -145,28 +145,55 @@ def grade_generation_grounded_in_documents_and_question(
 
 
 def route_question(state: GraphState) -> str:
-    """Determine whether to use local retrieval or web search."""
+    """
+    Route a question based on whether local user-provided knowledge
+    is available.
+
+    When the knowledge base contains documents, retrieval is always
+    attempted first. The document grading stage decides whether web
+    search is required.
+
+    When the knowledge base is empty, the LLM router decides between
+    vectorstore and web search.
+    """
+
+    print("---ROUTE QUESTION---")
+
+    question = state["question"]
+
+    # -------------------------------------------------
+    # Local knowledge takes priority when available.
+    # -------------------------------------------------
 
     if has_documents():
         print("---LOCAL KNOWLEDGE BASE AVAILABLE---")
         print("---ROUTE QUESTION TO RAG---")
         return RETRIEVE
 
-    print("---NO LOCAL KNOWLEDGE BASE---")
-    print("---ROUTE QUESTION---")
+    # -------------------------------------------------
+    # No local knowledge: let the LLM router decide.
+    # -------------------------------------------------
 
-    question = state["question"]
+    print("---LOCAL KNOWLEDGE BASE EMPTY---")
 
-    route = question_router.invoke(
-        {"question": question}
+    source: RouteQuery = question_router.invoke(
+        {
+            "question": question,
+        }
     )
 
-    if route.datasource == "websearch":
-        print("---ROUTE TO WEB SEARCH---")
+    if source.datasource == WEBSEARCH:
+        print("---ROUTE QUESTION TO WEB SEARCH---")
         return WEBSEARCH
 
-    print("---ROUTE TO VECTORSTORE---")
-    return RETRIEVE
+    if source.datasource == "vectorstore":
+        print("---ROUTE QUESTION TO RAG---")
+        return RETRIEVE
+
+    raise ValueError(
+        f"Unsupported datasource returned by router: "
+        f"{source.datasource}"
+    )
 
 
 # -----------------------------------
