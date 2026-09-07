@@ -5,14 +5,23 @@ from graph.state import GraphState
 
 
 def grade_documents(state: GraphState) -> Dict[str, Any]:
+    """
+    Grade retrieved documents for relevance to the question.
+    """
+
     print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
 
     question = state["question"]
-    documents = state.get("documents", [])
+
+    documents = state.get(
+        "documents",
+        [],
+    )
 
     filtered_docs = []
 
     for document in documents:
+
         score = retrieval_grader.invoke(
             {
                 "question": question,
@@ -21,19 +30,36 @@ def grade_documents(state: GraphState) -> Dict[str, Any]:
         )
 
         if score.binary_score.lower() == "yes":
-            print("---GRADE: DOCUMENT RELEVANT---")
-            filtered_docs.append(document)
-        else:
-            print("---GRADE: DOCUMENT NOT RELEVANT---")
 
-    web_search = len(filtered_docs) == 0
+            print(
+                "---GRADE: DOCUMENT RELEVANT---"
+            )
+
+            filtered_docs.append(document)
+
+        else:
+
+            print(
+                "---GRADE: DOCUMENT NOT RELEVANT---"
+            )
+
+    relevant_documents = len(filtered_docs)
+
+    web_search = relevant_documents == 0
 
     if web_search:
-        print("---NO RELEVANT DOCUMENTS FOUND---")
-        print("---WEB SEARCH REQUIRED---")
+
+        print(
+            "---NO RELEVANT DOCUMENTS FOUND---"
+        )
+
+        print(
+            "---WEB SEARCH REQUIRED---"
+        )
 
     return {
         "documents": filtered_docs,
         "question": question,
         "web_search": web_search,
+        "relevant_documents": relevant_documents,
     }
