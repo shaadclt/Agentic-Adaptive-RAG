@@ -23,15 +23,20 @@ def build_response(state: GraphState) -> Dict[str, Any]:
         for source in sources
     ) else "local"
 
+    answer = state.get(
+        "generation",
+        "",
+    )
+
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
+
     return {
-        "answer": state.get(
-            "generation",
-            "",
-        ),
+        "answer": answer,
+        "generation": answer,
         "sources": sources,
         "route": route,
-        "retry_count": state.get(
-            "retry_count",
-            0,
-        ),
+        "retry_count": retry_count,
     }
