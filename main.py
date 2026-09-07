@@ -6,7 +6,6 @@ from ingestion import (
     delete_document,
     list_documents,
 )
-
 from sources import extract_sources
 
 
@@ -208,8 +207,11 @@ def ask_question() -> None:
 
     print(
         result.get(
-            "generation",
-            "No answer generated.",
+            "answer",
+            result.get(
+                "generation",
+                "No answer generated.",
+            ),
         )
     )
 
@@ -218,7 +220,10 @@ def ask_question() -> None:
         [],
     )
 
-    sources = extract_sources(documents)
+    sources = result.get(
+        "sources",
+        extract_sources(documents),
+    )
 
     if sources:
         print()
@@ -229,13 +234,13 @@ def ask_question() -> None:
         local_sources = [
             source
             for source in sources
-            if source["type"] == "local"
+            if source.get("type") == "local"
         ]
 
         web_sources = [
             source
             for source in sources
-            if source["type"] == "web"
+            if source.get("type") == "web"
         ]
 
         if local_sources:
@@ -243,8 +248,13 @@ def ask_question() -> None:
             print("Local documents:")
 
             for source in local_sources:
+                file_name = source.get(
+                    "file_name",
+                    "Unknown document",
+                )
+
                 print(
-                    f"- {source['file_name']}"
+                    f"- {file_name}"
                 )
 
         if web_sources:
@@ -270,6 +280,17 @@ def ask_question() -> None:
     else:
         print()
         print("---NO SOURCES AVAILABLE---")
+
+    print()
+    print(
+        f"Route: "
+        f"{result.get('route', 'unknown')}"
+    )
+
+    print(
+        f"Generation retries: "
+        f"{result.get('retry_count', 0)}"
+    )
 
     print("=" * 60)
 
