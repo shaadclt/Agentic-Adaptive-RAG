@@ -1,22 +1,14 @@
-from typing import List, TypedDict
+from typing import Any, Dict, List, TypedDict
 
 from langchain_core.documents import Document
 
 
 class GraphState(TypedDict, total=False):
-    """
-    State passed between nodes in the Agentic Adaptive RAG graph.
-
-    Attributes:
-        question: The user's question.
-        generation: The latest LLM-generated answer.
-        web_search: Whether web search should be performed.
-        documents: Retrieved documents from local or web sources.
-        retry_count: Number of generation retries performed.
-    """
-
     question: str
     generation: str
+    answer: str
     web_search: bool
+    route: str
     documents: List[Document]
+    sources: List[Dict[str, Any]]
     retry_count: int
