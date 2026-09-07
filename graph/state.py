@@ -7,8 +7,17 @@ class GraphState(TypedDict, total=False):
     question: str
     generation: str
     answer: str
+
     web_search: bool
     route: str
+
     documents: List[Document]
     sources: List[Dict[str, Any]]
+
     retry_count: int
+
+    # Evaluation metadata
+    retrieved_documents: int
+    relevant_documents: int
+    grounded: bool
+    answers_question: bool
