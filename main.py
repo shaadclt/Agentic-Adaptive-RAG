@@ -197,16 +197,10 @@ def remove_document() -> None:
         )
 
 
-def display_sources(
-    sources: list[dict],
-) -> None:
-    """Display structured source information."""
-
+def display_sources(sources: list[dict]) -> None:
     if not sources:
         print()
-        print(
-            "---NO SOURCES AVAILABLE---"
-        )
+        print("---NO SOURCES AVAILABLE---")
         return
 
     print()
@@ -230,19 +224,26 @@ def display_sources(
         print()
         print("Local documents:")
 
+        displayed_files = set()
+
         for source in local_sources:
             file_name = source.get(
                 "file_name",
                 "Unknown document",
             )
 
-            print(
-                f"- {file_name}"
-            )
+            if file_name in displayed_files:
+                continue
+
+            displayed_files.add(file_name)
+
+            print(f"- {file_name}")
 
     if web_sources:
         print()
         print("Web sources:")
+
+        displayed_urls = set()
 
         for source in web_sources:
             title = source.get(
@@ -255,14 +256,15 @@ def display_sources(
                 "",
             )
 
-            print(
-                f"- {title}"
-            )
+            if url in displayed_urls:
+                continue
+
+            displayed_urls.add(url)
+
+            print(f"- {title}")
 
             if url:
-                print(
-                    f"  {url}"
-                )
+                print(f"  {url}")
 
 
 def ask_question() -> None:
