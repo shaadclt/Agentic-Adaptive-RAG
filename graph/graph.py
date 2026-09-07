@@ -18,7 +18,7 @@ from graph.nodes.retrieve import retrieve
 from graph.nodes.web_search import web_search
 from graph.state import GraphState
 from retrieval import has_documents
-from sources import extract_sources
+from graph.nodes.build_response import build_response
 
 
 load_dotenv()
@@ -219,6 +219,11 @@ workflow.add_node(
 )
 
 workflow.add_node(
+    "build_response",
+    build_response,
+)
+
+workflow.add_node(
     WEBSEARCH,
     web_search,
 )
@@ -255,12 +260,12 @@ workflow.add_conditional_edges(
 
 
 workflow.add_conditional_edges(
-    GENERATE,
+    "generate",
     grade_generation_grounded_in_documents_and_question,
     {
-        "retry": INCREMENT_RETRY,
-        "useful": END,
+        "useful": "build_response",
         "not useful": WEBSEARCH,
+        "retry": "increment_retry",
     },
 )
 
@@ -274,6 +279,11 @@ workflow.add_edge(
 workflow.add_edge(
     INCREMENT_RETRY,
     GENERATE,
+)
+
+workflow.add_edge(
+    "build_response",
+    END,
 )
 
 
