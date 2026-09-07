@@ -1,16 +1,11 @@
-from dotenv import load_dotenv
-from langgraph.graph import END, StateGraph
+from typing import Any, Dict
+
+from langgraph.graph import END, START, StateGraph
 
 from graph.chains.answer_grader import answer_grader
 from graph.chains.hallucination_grader import hallucination_grader
-from graph.chains.router import RouteQuery, question_router
-from graph.consts import (
-    GENERATE,
-    GRADE_DOCUMENTS,
-    RETRIEVE,
-    WEBSEARCH,
-    INCREMENT_RETRY,
-)
+from graph.chains.router import question_router
+from graph.nodes.build_response import build_response
 from graph.nodes.generate import generate
 from graph.nodes.grade_documents import grade_documents
 from graph.nodes.increment_retry import increment_retry
@@ -18,97 +13,101 @@ from graph.nodes.retrieve import retrieve
 from graph.nodes.web_search import web_search
 from graph.state import GraphState
 from retrieval import has_documents
-from graph.nodes.build_response import build_response
-
-
-load_dotenv()
 
 
 MAX_GENERATION_RETRIES = 2
 
 
-def normalize_binary_score(value) -> bool:
+def normalize_binary_score(score: Any) -> str:
     """
-    Normalize grader outputs to a Python boolean.
-
-    Graders may return:
-        True / False
-        "yes" / "no"
-        "true" / "false"
-        "1" / "0"
+    Normalize grader output to lowercase yes/no text.
     """
 
-    if isinstance(value, bool):
-        return value
+    if isinstance(score, bool):
+        return "yes" if score else "no"
 
-    if isinstance(value, str):
-        return value.strip().lower() in {
-            "yes",
-            "true",
-            "1",
-        }
-
-    return bool(value)
+    return str(score).strip().lower()
 
 
 def decide_to_generate(state: GraphState) -> str:
+    """
+    Decide whether to generate an answer or perform web search
+    after grading retrieved documents.
+    """
+
     print("---ASSESS GRADED DOCUMENTS---")
 
-    if state.get("web_search", False):
+    web_search_required = state.get(
+        "web_search",
+        False,
+    )
+
+    if web_search_required:
         print(
             "---DECISION: LOCAL DOCUMENTS INSUFFICIENT, "
             "INCLUDE WEB SEARCH---"
         )
-        return WEBSEARCH
+        return "websearch"
 
     print("---DECISION: GENERATE---")
-    return GENERATE
+    return "generate"
 
 
 def grade_generation_grounded_in_documents_and_question(
     state: GraphState,
 ) -> str:
+    """
+    Evaluate whether the generated answer is grounded in the
+    available documents and answers the user's question.
+    """
+
     print("---CHECK HALLUCINATIONS---")
 
     question = state["question"]
-    documents = state.get("documents", [])
-    generation = state.get("generation", "")
+    documents = state.get(
+        "documents",
+        [],
+    )
+    generation = state.get(
+        "generation",
+        "",
+    )
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
 
-    # -----------------------------------
-    # Hallucination / grounding check
-    # -----------------------------------
-
-    score = hallucination_grader.invoke(
+    hallucination_score = hallucination_grader.invoke(
         {
             "documents": documents,
             "generation": generation,
         }
     )
 
-    grounded = normalize_binary_score(score.binary_score)
+    grounded = normalize_binary_score(
+        hallucination_score.binary_score
+    )
 
-    if grounded:
+    if grounded == "yes":
         print(
             "---DECISION: GENERATION IS GROUNDED "
             "IN DOCUMENTS---"
         )
 
-        # -----------------------------------
-        # Answer quality check
-        # -----------------------------------
-
         print("---GRADE GENERATION VS QUESTION---")
 
-        score = answer_grader.invoke(
+        answer_score = answer_grader.invoke(
             {
                 "question": question,
                 "generation": generation,
             }
         )
 
-        useful = normalize_binary_score(score.binary_score)
+        answers_question = normalize_binary_score(
+            answer_score.binary_score
+        )
 
-        if useful:
+        if answers_question == "yes":
             print(
                 "---DECISION: GENERATION ADDRESSES "
                 "QUESTION---"
@@ -119,103 +118,108 @@ def grade_generation_grounded_in_documents_and_question(
             "---DECISION: GENERATION DOES NOT "
             "ADDRESS QUESTION---"
         )
+
         return "not useful"
 
-    # -----------------------------------
-    # Generation is not grounded
-    # -----------------------------------
-
     print(
-        "---DECISION: GENERATION IS NOT "
-        "GROUNDED IN DOCUMENTS---"
+        "---DECISION: GENERATION IS NOT GROUNDED "
+        "IN DOCUMENTS---"
     )
-
-    retry_count = state.get("retry_count", 0)
 
     if retry_count < MAX_GENERATION_RETRIES:
         print(
-            f"---DECISION: RETRY GENERATION "
-            f"({retry_count + 1}/{MAX_GENERATION_RETRIES})---"
+            f"---RETRY GENERATION "
+            f"({retry_count + 1}/"
+            f"{MAX_GENERATION_RETRIES})---"
         )
         return "retry"
 
-    print("---DECISION: MAX RETRIES REACHED---")
+    print(
+        "---DECISION: MAXIMUM RETRIES REACHED, "
+        "USE WEB SEARCH---"
+    )
 
     return "not useful"
 
 
 def route_question(state: GraphState) -> str:
     """
-    Route a question based on whether local user-provided knowledge
-    is available.
+    Determine the initial route.
 
-    When the knowledge base contains documents, retrieval is always
-    attempted first. The document grading stage decides whether web
-    search is required.
+    When the local knowledge base contains documents, local
+    retrieval always takes priority over the LLM router.
 
-    When the knowledge base is empty, the LLM router decides between
-    vectorstore and web search.
+    When the local knowledge base is empty, the LLM router
+    decides between vectorstore and web search.
     """
 
     print("---ROUTE QUESTION---")
 
+    if has_documents():
+        print(
+            "---LOCAL KNOWLEDGE BASE AVAILABLE---"
+        )
+        print(
+            "---ROUTE QUESTION TO RAG---"
+        )
+        return "retrieve"
+
+    print(
+        "---NO LOCAL KNOWLEDGE BASE---"
+    )
+
     question = state["question"]
 
-    # -------------------------------------------------
-    # Local knowledge takes priority when available.
-    # -------------------------------------------------
-
-    if has_documents():
-        print("---LOCAL KNOWLEDGE BASE AVAILABLE---")
-        print("---ROUTE QUESTION TO RAG---")
-        return RETRIEVE
-
-    # -------------------------------------------------
-    # No local knowledge: let the LLM router decide.
-    # -------------------------------------------------
-
-    print("---LOCAL KNOWLEDGE BASE EMPTY---")
-
-    source: RouteQuery = question_router.invoke(
+    route = question_router.invoke(
         {
             "question": question,
         }
     )
 
-    if source.datasource == WEBSEARCH:
-        print("---ROUTE QUESTION TO WEB SEARCH---")
-        return WEBSEARCH
+    if route.datasource == "websearch":
+        print(
+            "---ROUTE QUESTION TO WEB SEARCH---"
+        )
+        return "websearch"
 
-    if source.datasource == "vectorstore":
-        print("---ROUTE QUESTION TO RAG---")
-        return RETRIEVE
-
-    raise ValueError(
-        f"Unsupported datasource returned by router: "
-        f"{source.datasource}"
+    print(
+        "---ROUTE QUESTION TO RAG---"
     )
 
+    return "retrieve"
 
-# -----------------------------------
-# Build Graph
-# -----------------------------------
+
+# ---------------------------------------------------------------------------
+# Build LangGraph workflow
+# ---------------------------------------------------------------------------
 
 workflow = StateGraph(GraphState)
 
 
+# Nodes
 workflow.add_node(
-    RETRIEVE,
+    "retrieve",
     retrieve,
 )
 
 workflow.add_node(
-    GRADE_DOCUMENTS,
+    "grade_documents",
     grade_documents,
 )
 
 workflow.add_node(
-    GENERATE,
+    "websearch",
+    web_search,
+)
+
+workflow.add_node(
+    "generate",
     generate,
+)
+
+workflow.add_node(
+    "increment_retry",
+    increment_retry,
 )
 
 workflow.add_node(
@@ -223,68 +227,68 @@ workflow.add_node(
     build_response,
 )
 
-workflow.add_node(
-    WEBSEARCH,
-    web_search,
-)
 
-workflow.add_node(
-    INCREMENT_RETRY,
-    increment_retry,
-)
-
-
-workflow.set_conditional_entry_point(
+# Entry routing
+workflow.add_conditional_edges(
+    START,
     route_question,
     {
-        WEBSEARCH: WEBSEARCH,
-        RETRIEVE: RETRIEVE,
+        "retrieve": "retrieve",
+        "websearch": "websearch",
     },
 )
 
 
+# Local retrieval → document grading
 workflow.add_edge(
-    RETRIEVE,
-    GRADE_DOCUMENTS,
+    "retrieve",
+    "grade_documents",
 )
 
 
+# Document grading → generation or web search
 workflow.add_conditional_edges(
-    GRADE_DOCUMENTS,
+    "grade_documents",
     decide_to_generate,
     {
-        WEBSEARCH: WEBSEARCH,
-        GENERATE: GENERATE,
+        "generate": "generate",
+        "websearch": "websearch",
     },
 )
 
 
+# Web search → generation
+workflow.add_edge(
+    "websearch",
+    "generate",
+)
+
+
+# Generation → quality gate
 workflow.add_conditional_edges(
     "generate",
     grade_generation_grounded_in_documents_and_question,
     {
         "useful": "build_response",
-        "not useful": WEBSEARCH,
         "retry": "increment_retry",
+        "not useful": "websearch",
     },
 )
 
 
+# Retry → generation
 workflow.add_edge(
-    WEBSEARCH,
-    GENERATE,
+    "increment_retry",
+    "generate",
 )
 
 
-workflow.add_edge(
-    INCREMENT_RETRY,
-    GENERATE,
-)
-
+# Final structured response → END
 workflow.add_edge(
     "build_response",
     END,
 )
 
 
+# Compile application
 app = workflow.compile()
