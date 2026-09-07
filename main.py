@@ -9,6 +9,14 @@ from ingestion import (
 from sources import extract_sources
 
 
+SUPPORTED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".txt",
+    ".md",
+}
+
+
 def print_menu() -> None:
     print()
     print("=" * 60)
@@ -51,14 +59,16 @@ def add_documents() -> None:
             )
             continue
 
-        if path.suffix.lower() not in {
-            ".pdf",
-            ".docx",
-            ".txt",
-            ".md",
-        }:
+        if not path.is_file():
             print(
-                f"---UNSUPPORTED FILE TYPE: {path.name}---"
+                f"---NOT A FILE: {file_path}---"
+            )
+            continue
+
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            print(
+                f"---UNSUPPORTED FILE TYPE: "
+                f"{path.name}---"
             )
             continue
 
@@ -70,7 +80,8 @@ def add_documents() -> None:
 
     print()
     print(
-        f"Found {len(valid_paths)} valid document(s)."
+        f"Found {len(valid_paths)} "
+        f"valid document(s)."
     )
 
     build_vectorstore(valid_paths)
@@ -83,7 +94,9 @@ def view_knowledge_base() -> None:
     documents = list_documents()
 
     if not documents:
-        print("---KNOWLEDGE BASE IS EMPTY---")
+        print(
+            "---KNOWLEDGE BASE IS EMPTY---"
+        )
         return
 
     print(
@@ -126,7 +139,9 @@ def remove_document() -> None:
     documents = list_documents()
 
     if not documents:
-        print("---KNOWLEDGE BASE IS EMPTY---")
+        print(
+            "---KNOWLEDGE BASE IS EMPTY---"
+        )
         return
 
     for index, document in enumerate(
@@ -151,7 +166,9 @@ def remove_document() -> None:
     index = int(choice)
 
     if index < 1 or index > len(documents):
-        print("---INVALID DOCUMENT NUMBER---")
+        print(
+            "---INVALID DOCUMENT NUMBER---"
+        )
         return
 
     document = documents[index - 1]
@@ -175,7 +192,77 @@ def remove_document() -> None:
             f"{document['file_name']}---"
         )
     else:
-        print("---DOCUMENT NOT FOUND---")
+        print(
+            "---DOCUMENT NOT FOUND---"
+        )
+
+
+def display_sources(
+    sources: list[dict],
+) -> None:
+    """Display structured source information."""
+
+    if not sources:
+        print()
+        print(
+            "---NO SOURCES AVAILABLE---"
+        )
+        return
+
+    print()
+    print("=" * 60)
+    print("SOURCES")
+    print("=" * 60)
+
+    local_sources = [
+        source
+        for source in sources
+        if source.get("type") == "local"
+    ]
+
+    web_sources = [
+        source
+        for source in sources
+        if source.get("type") == "web"
+    ]
+
+    if local_sources:
+        print()
+        print("Local documents:")
+
+        for source in local_sources:
+            file_name = source.get(
+                "file_name",
+                "Unknown document",
+            )
+
+            print(
+                f"- {file_name}"
+            )
+
+    if web_sources:
+        print()
+        print("Web sources:")
+
+        for source in web_sources:
+            title = source.get(
+                "title",
+                "Web source",
+            )
+
+            url = source.get(
+                "url",
+                "",
+            )
+
+            print(
+                f"- {title}"
+            )
+
+            if url:
+                print(
+                    f"  {url}"
+                )
 
 
 def ask_question() -> None:
@@ -187,7 +274,9 @@ def ask_question() -> None:
     ).strip()
 
     if not question:
-        print("---QUESTION CANNOT BE EMPTY---")
+        print(
+            "---QUESTION CANNOT BE EMPTY---"
+        )
         return
 
     print()
@@ -200,96 +289,52 @@ def ask_question() -> None:
         }
     )
 
-    print()
-    print("=" * 60)
-    print("ANSWER")
-    print("=" * 60)
-
-    print(
+    answer = result.get(
+        "answer",
         result.get(
-            "answer",
-            result.get(
-                "generation",
-                "No answer generated.",
-            ),
-        )
-    )
-
-    documents = result.get(
-        "documents",
-        [],
+            "generation",
+            "No answer generated.",
+        ),
     )
 
     sources = result.get(
         "sources",
-        extract_sources(documents),
     )
 
-    if sources:
-        print()
-        print("=" * 60)
-        print("SOURCES")
-        print("=" * 60)
+    if sources is None:
+        sources = extract_sources(
+            result.get(
+                "documents",
+                [],
+            )
+        )
 
-        local_sources = [
-            source
-            for source in sources
-            if source.get("type") == "local"
-        ]
+    route = result.get(
+        "route",
+        "unknown",
+    )
 
-        web_sources = [
-            source
-            for source in sources
-            if source.get("type") == "web"
-        ]
+    retry_count = result.get(
+        "retry_count",
+        0,
+    )
 
-        if local_sources:
-            print()
-            print("Local documents:")
+    print()
+    print("=" * 60)
+    print("ANSWER")
+    print("=" * 60)
+    print(answer)
 
-            for source in local_sources:
-                file_name = source.get(
-                    "file_name",
-                    "Unknown document",
-                )
-
-                print(
-                    f"- {file_name}"
-                )
-
-        if web_sources:
-            print()
-            print("Web sources:")
-
-            for source in web_sources:
-                title = source.get(
-                    "title",
-                    "Web source",
-                )
-
-                url = source.get(
-                    "url",
-                    "",
-                )
-
-                print(f"- {title}")
-
-                if url:
-                    print(f"  {url}")
-
-    else:
-        print()
-        print("---NO SOURCES AVAILABLE---")
+    display_sources(sources)
 
     print()
     print(
-        f"Route: "
-        f"{result.get('route', 'unknown')}"
+        f"Route: {route}"
     )
 
     print(
         f"Generation retries: "
-        f"{result.get('retry_count', 0)}"
+        f"{retry_count}"
     )
 
     print("=" * 60)
@@ -320,7 +365,9 @@ def main() -> None:
             break
 
         else:
-            print("---INVALID OPTION---")
+            print(
+                "---INVALID OPTION---"
+            )
 
 
 if __name__ == "__main__":
