@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from langchain_core.documents import Document
 
@@ -8,23 +8,23 @@ def extract_sources(
 ) -> List[Dict[str, Any]]:
     """
     Extract unique source information from retrieved documents.
+
+    Multiple chunks from the same document are represented
+    by a single source.
     """
 
-    sources = []
+    sources: List[Dict[str, Any]] = []
     seen = set()
 
     for document in documents:
         metadata = document.metadata or {}
 
-        source_type = metadata.get(
-            "source",
-            "unknown",
-        )
+        if metadata.get("source") == "web":
+            url = metadata.get("url", "")
 
-        if source_type == "web":
             key = (
                 "web",
-                metadata.get("url", ""),
+                url,
             )
 
             source = {
@@ -33,38 +33,44 @@ def extract_sources(
                     "title",
                     "Web source",
                 ),
-                "url": metadata.get(
-                    "url",
-                    "",
-                ),
+                "url": url,
             }
 
         else:
+            document_id = metadata.get(
+                "document_id",
+                "",
+            )
+
+            file_name = metadata.get(
+                "file_name",
+                "",
+            )
+
+            source_path = metadata.get(
+                "source",
+                "",
+            )
+
+            # Prefer document_id when available.
+            # Fall back to filename/source for older
+            # Chroma records that may not have document_id.
             key = (
                 "local",
-                metadata.get(
-                    "document_id",
-                    metadata.get(
-                        "source",
-                        "",
-                    ),
-                ),
+                document_id
+                or file_name
+                or source_path,
             )
 
             source = {
                 "type": "local",
-                "file_name": metadata.get(
-                    "file_name",
-                    "Unknown document",
+                "file_name": (
+                    file_name
+                    or source_path
+                    or "Unknown document"
                 ),
-                "source": metadata.get(
-                    "source",
-                    "",
-                ),
-                "document_id": metadata.get(
-                    "document_id",
-                    "",
-                ),
+                "source": source_path,
+                "document_id": document_id,
             }
 
         if key in seen:
