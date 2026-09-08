@@ -1,11 +1,19 @@
 from pathlib import Path
+from time import perf_counter
+
+from evaluation import (
+    EvaluationResult,
+    EvaluationTracker,
+)
 
 from graph.graph import app
+
 from ingestion import (
     build_vectorstore,
     delete_document,
     list_documents,
 )
+
 from sources import extract_sources
 
 
@@ -17,6 +25,17 @@ SUPPORTED_EXTENSIONS = {
 }
 
 
+# ---------------------------------------------------------
+# EVALUATION
+# ---------------------------------------------------------
+
+evaluation_tracker = EvaluationTracker()
+
+
+# ---------------------------------------------------------
+# MENU
+# ---------------------------------------------------------
+
 def print_menu() -> None:
     print()
     print("=" * 60)
@@ -26,9 +45,14 @@ def print_menu() -> None:
     print("2. View knowledge base")
     print("3. Remove document")
     print("4. Ask a question")
-    print("5. Exit")
+    print("5. View evaluation")
+    print("6. Exit")
     print("=" * 60)
 
+
+# ---------------------------------------------------------
+# ADD DOCUMENTS
+# ---------------------------------------------------------
 
 def add_documents() -> None:
     print()
@@ -51,6 +75,7 @@ def add_documents() -> None:
     valid_paths = []
 
     for file_path in file_paths:
+
         path = Path(file_path)
 
         if not path.exists():
@@ -87,6 +112,10 @@ def add_documents() -> None:
     build_vectorstore(valid_paths)
 
 
+# ---------------------------------------------------------
+# VIEW KNOWLEDGE BASE
+# ---------------------------------------------------------
+
 def view_knowledge_base() -> None:
     print()
     print("--- KNOWLEDGE BASE ---")
@@ -103,12 +132,14 @@ def view_knowledge_base() -> None:
         f"Documents in knowledge base: "
         f"{len(documents)}"
     )
+
     print()
 
     for index, document in enumerate(
         documents,
         start=1,
     ):
+
         print(
             f"[{index}] "
             f"{document['file_name']}"
@@ -132,6 +163,10 @@ def view_knowledge_base() -> None:
         print()
 
 
+# ---------------------------------------------------------
+# REMOVE DOCUMENT
+# ---------------------------------------------------------
+
 def remove_document() -> None:
     print()
     print("--- REMOVE DOCUMENT ---")
@@ -148,6 +183,7 @@ def remove_document() -> None:
         documents,
         start=1,
     ):
+
         print(
             f"{index}. "
             f"{document['file_name']}"
@@ -174,8 +210,8 @@ def remove_document() -> None:
     document = documents[index - 1]
 
     confirm = input(
-        f"Remove '{document['file_name']}'? "
-        "[y/N]: "
+        f"Remove "
+        f"'{document['file_name']}'? [y/N]: "
     ).strip().lower()
 
     if confirm != "y":
@@ -197,10 +233,19 @@ def remove_document() -> None:
         )
 
 
-def display_sources(sources: list[dict]) -> None:
+# ---------------------------------------------------------
+# DISPLAY SOURCES
+# ---------------------------------------------------------
+
+def display_sources(
+    sources: list[dict],
+) -> None:
+
     if not sources:
         print()
-        print("---NO SOURCES AVAILABLE---")
+        print(
+            "---NO SOURCES AVAILABLE---"
+        )
         return
 
     print()
@@ -220,13 +265,19 @@ def display_sources(sources: list[dict]) -> None:
         if source.get("type") == "web"
     ]
 
+    # -----------------------------------------------------
+    # LOCAL SOURCES
+    # -----------------------------------------------------
+
     if local_sources:
+
         print()
         print("Local documents:")
 
         displayed_files = set()
 
         for source in local_sources:
+
             file_name = source.get(
                 "file_name",
                 "Unknown document",
@@ -235,17 +286,27 @@ def display_sources(sources: list[dict]) -> None:
             if file_name in displayed_files:
                 continue
 
-            displayed_files.add(file_name)
+            displayed_files.add(
+                file_name
+            )
 
-            print(f"- {file_name}")
+            print(
+                f"- {file_name}"
+            )
+
+    # -----------------------------------------------------
+    # WEB SOURCES
+    # -----------------------------------------------------
 
     if web_sources:
+
         print()
         print("Web sources:")
 
         displayed_urls = set()
 
         for source in web_sources:
+
             title = source.get(
                 "title",
                 "Web source",
@@ -261,13 +322,22 @@ def display_sources(sources: list[dict]) -> None:
 
             displayed_urls.add(url)
 
-            print(f"- {title}")
+            print(
+                f"- {title}"
+            )
 
             if url:
-                print(f"  {url}")
+                print(
+                    f"  {url}"
+                )
 
+
+# ---------------------------------------------------------
+# ASK QUESTION
+# ---------------------------------------------------------
 
 def ask_question() -> None:
+
     print()
     print("--- ASK A QUESTION ---")
 
@@ -276,13 +346,25 @@ def ask_question() -> None:
     ).strip()
 
     if not question:
+
         print(
             "---QUESTION CANNOT BE EMPTY---"
         )
+
         return
 
     print()
     print("---PROCESSING QUESTION---")
+
+    # -----------------------------------------------------
+    # START LATENCY TIMER
+    # -----------------------------------------------------
+
+    start_time = perf_counter()
+
+    # -----------------------------------------------------
+    # RUN AGENTIC RAG GRAPH
+    # -----------------------------------------------------
 
     result = app.invoke(
         {
@@ -290,6 +372,19 @@ def ask_question() -> None:
             "retry_count": 0,
         }
     )
+
+    # -----------------------------------------------------
+    # CALCULATE LATENCY
+    # -----------------------------------------------------
+
+    latency = (
+        perf_counter()
+        - start_time
+    )
+
+    # -----------------------------------------------------
+    # EXTRACT ANSWER
+    # -----------------------------------------------------
 
     answer = result.get(
         "answer",
@@ -299,17 +394,26 @@ def ask_question() -> None:
         ),
     )
 
+    # -----------------------------------------------------
+    # EXTRACT SOURCES
+    # -----------------------------------------------------
+
     sources = result.get(
-        "sources",
+        "sources"
     )
 
     if sources is None:
+
         sources = extract_sources(
             result.get(
                 "documents",
                 [],
             )
         )
+
+    # -----------------------------------------------------
+    # EXTRACT EVALUATION DATA
+    # -----------------------------------------------------
 
     route = result.get(
         "route",
@@ -321,15 +425,72 @@ def ask_question() -> None:
         0,
     )
 
+    retrieved_documents = result.get(
+        "retrieved_documents",
+        0,
+    )
+
+    relevant_documents = result.get(
+        "relevant_documents",
+        0,
+    )
+
+    grounded = result.get(
+        "grounded",
+        False,
+    )
+
+    answers_question = result.get(
+        "answers_question",
+        True,
+    )
+
+    # -----------------------------------------------------
+    # STORE EVALUATION RESULT
+    # -----------------------------------------------------
+
+    evaluation_result = EvaluationResult(
+        question=question,
+        answer=answer,
+        route=route,
+        retrieved_documents=retrieved_documents,
+        relevant_documents=relevant_documents,
+        grounded=grounded,
+        answers_question=answers_question,
+        retry_count=retry_count,
+        latency_seconds=latency,
+        sources=sources,
+    )
+
+    evaluation_tracker.add(
+        evaluation_result
+    )
+
+    # -----------------------------------------------------
+    # DISPLAY ANSWER
+    # -----------------------------------------------------
+
     print()
     print("=" * 60)
     print("ANSWER")
     print("=" * 60)
+
     print(answer)
 
-    display_sources(sources)
+    # -----------------------------------------------------
+    # DISPLAY SOURCES
+    # -----------------------------------------------------
+
+    display_sources(
+        sources
+    )
+
+    # -----------------------------------------------------
+    # DISPLAY METADATA
+    # -----------------------------------------------------
 
     print()
+
     print(
         f"Route: {route}"
     )
@@ -339,11 +500,100 @@ def ask_question() -> None:
         f"{retry_count}"
     )
 
+    print(
+        f"Latency: "
+        f"{latency:.2f} seconds"
+    )
+
+    if retrieved_documents:
+
+        print(
+            f"Retrieved documents: "
+            f"{retrieved_documents}"
+        )
+
+        print(
+            f"Relevant documents: "
+            f"{relevant_documents}"
+        )
+
+        relevance_rate = (
+            relevant_documents
+            / retrieved_documents
+        )
+
+        print(
+            f"Retrieval relevance: "
+            f"{relevance_rate * 100:.1f}%"
+        )
+
     print("=" * 60)
 
 
+# ---------------------------------------------------------
+# VIEW EVALUATION
+# ---------------------------------------------------------
+
+def view_evaluation() -> None:
+
+    print()
+    print("=" * 60)
+    print("RAG EVALUATION")
+    print("=" * 60)
+
+    summary = evaluation_tracker.summary()
+
+    if summary["total_questions"] == 0:
+
+        print()
+        print(
+            "---NO QUESTIONS EVALUATED YET---"
+        )
+
+        print("=" * 60)
+
+        return
+
+    print()
+
+    print(
+        f"Total questions: "
+        f"{summary['total_questions']}"
+    )
+
+    print(
+        f"Average latency: "
+        f"{summary['average_latency_seconds']:.2f} "
+        f"seconds"
+    )
+
+    print(
+        f"Grounded answer rate: "
+        f"{summary['grounded_rate'] * 100:.1f}%"
+    )
+
+    print(
+        f"Answer quality rate: "
+        f"{summary['answer_quality_rate'] * 100:.1f}%"
+    )
+
+    print(
+        f"Average generation retries: "
+        f"{summary['average_retries']:.2f}"
+    )
+
+    print()
+    print("=" * 60)
+
+
+# ---------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------
+
 def main() -> None:
+
     while True:
+
         print_menu()
 
         choice = input(
@@ -351,26 +601,43 @@ def main() -> None:
         ).strip()
 
         if choice == "1":
+
             add_documents()
 
         elif choice == "2":
+
             view_knowledge_base()
 
         elif choice == "3":
+
             remove_document()
 
         elif choice == "4":
+
             ask_question()
 
         elif choice == "5":
-            print("---GOODBYE---")
+
+            view_evaluation()
+
+        elif choice == "6":
+
+            print(
+                "---GOODBYE---"
+            )
+
             break
 
         else:
+
             print(
                 "---INVALID OPTION---"
             )
 
+
+# ---------------------------------------------------------
+# ENTRY POINT
+# ---------------------------------------------------------
 
 if __name__ == "__main__":
     main()
