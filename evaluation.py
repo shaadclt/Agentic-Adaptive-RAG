@@ -1,83 +1,113 @@
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List
 
 
+EVALUATION_FILE = Path("./evaluation_history.jsonl")
+
+
 @dataclass
 class EvaluationResult:
-    """
-    Stores evaluation information for a single RAG query.
-    """
-
     question: str
     answer: str
-
     route: str = "unknown"
-
     retrieved_documents: int = 0
     relevant_documents: int = 0
-
     grounded: bool = False
     answers_question: bool = False
-
     retry_count: int = 0
-
     latency_seconds: float = 0.0
-
-    sources: List[Dict[str, Any]] = field(
-        default_factory=list
-    )
+    sources: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def retrieval_relevance_rate(self) -> float:
-        """
-        Percentage of retrieved documents considered relevant.
-        """
         if self.retrieved_documents == 0:
             return 0.0
 
-        return (
-            self.relevant_documents
-            / self.retrieved_documents
-        )
+        return self.relevant_documents / self.retrieved_documents
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert evaluation result to a dictionary.
-        """
-        return {
-            "question": self.question,
-            "answer": self.answer,
-            "route": self.route,
-            "retrieved_documents": self.retrieved_documents,
-            "relevant_documents": self.relevant_documents,
-            "retrieval_relevance_rate": (
-                self.retrieval_relevance_rate
-            ),
-            "grounded": self.grounded,
-            "answers_question": self.answers_question,
-            "retry_count": self.retry_count,
-            "latency_seconds": self.latency_seconds,
-            "sources": self.sources,
-        }
+        data = asdict(self)
+        data["retrieval_relevance_rate"] = (
+            self.retrieval_relevance_rate
+        )
+        return data
 
 
 class EvaluationTracker:
-    """
-    Tracks evaluation results across multiple queries.
-    """
-
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        storage_path: Path | str = EVALUATION_FILE,
+    ) -> None:
+        self.storage_path = Path(storage_path)
         self.results: List[EvaluationResult] = []
+        self.load()
 
     def add(self, result: EvaluationResult) -> None:
         self.results.append(result)
+        self.save_result(result)
+
+    def save_result(self, result: EvaluationResult) -> None:
+        self.storage_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        with self.storage_path.open(
+            "a",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                result.to_dict(),
+                file,
+                ensure_ascii=False,
+            )
+            file.write("\n")
+
+    def load(self) -> None:
+        if not self.storage_path.exists():
+            return
+
+        self.results = []
+
+        with self.storage_path.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
+            for line in file:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+
+                    data.pop(
+                        "retrieval_relevance_rate",
+                        None,
+                    )
+
+                    self.results.append(
+                        EvaluationResult(**data)
+                    )
+
+                except (
+                    json.JSONDecodeError,
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+    def clear(self) -> None:
+        self.results = []
+
+        if self.storage_path.exists():
+            self.storage_path.unlink()
 
     def summary(self) -> Dict[str, Any]:
-        """
-        Calculate aggregate evaluation metrics.
-        """
-
         if not self.results:
             return {
                 "total_questions": 0,
@@ -127,16 +157,9 @@ class EvaluationTracker:
 
 
 def measure_latency(func, *args, **kwargs):
-    """
-    Execute a function and measure its latency.
-    """
-
     start = perf_counter()
 
-    result = func(
-        *args,
-        **kwargs,
-    )
+    result = func(*args, **kwargs)
 
     latency = perf_counter() - start
 
