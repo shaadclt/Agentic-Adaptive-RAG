@@ -19,6 +19,7 @@ MAX_GENERATION_RETRIES = 2
 
 
 def normalize_binary_score(score: Any) -> str:
+
     if isinstance(score, bool):
         return "yes" if score else "no"
 
@@ -26,18 +27,25 @@ def normalize_binary_score(score: Any) -> str:
 
 
 def decide_to_generate(state: GraphState) -> str:
+
     print("---ASSESS GRADED DOCUMENTS---")
 
-    web_search_required = state.get("web_search", False)
+    web_search_required = state.get(
+        "web_search",
+        False,
+    )
 
     if web_search_required:
+
         print(
             "---DECISION: LOCAL DOCUMENTS INSUFFICIENT, "
             "INCLUDE WEB SEARCH---"
         )
+
         return "websearch"
 
     print("---DECISION: GENERATE---")
+
     return "generate"
 
 
@@ -48,9 +56,21 @@ def grade_generation_grounded_in_documents_and_question(
     print("---CHECK HALLUCINATIONS---")
 
     question = state["question"]
-    documents = state.get("documents", [])
-    generation = state.get("generation", "")
-    retry_count = state.get("retry_count", 0)
+
+    documents = state.get(
+        "documents",
+        [],
+    )
+
+    generation = state.get(
+        "generation",
+        "",
+    )
+
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
 
     hallucination_score = hallucination_grader.invoke(
         {
@@ -69,7 +89,9 @@ def grade_generation_grounded_in_documents_and_question(
             "---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---"
         )
 
-        print("---GRADE GENERATION VS QUESTION---")
+        print(
+            "---GRADE GENERATION VS QUESTION---"
+        )
 
         answer_score = answer_grader.invoke(
             {
@@ -83,9 +105,11 @@ def grade_generation_grounded_in_documents_and_question(
         )
 
         if answers_question == "yes":
+
             print(
                 "---DECISION: GENERATION ADDRESSES QUESTION---"
             )
+
             return "useful"
 
         print(
@@ -121,12 +145,19 @@ def route_question(state: GraphState) -> str:
 
     if has_documents():
 
-        print("---LOCAL KNOWLEDGE BASE AVAILABLE---")
-        print("---ROUTE QUESTION TO RAG---")
+        print(
+            "---LOCAL KNOWLEDGE BASE AVAILABLE---"
+        )
+
+        print(
+            "---ROUTE QUESTION TO RAG---"
+        )
 
         return "retrieve"
 
-    print("---NO LOCAL KNOWLEDGE BASE---")
+    print(
+        "---NO LOCAL KNOWLEDGE BASE---"
+    )
 
     question = state["question"]
 
@@ -138,30 +169,70 @@ def route_question(state: GraphState) -> str:
 
     if route.datasource == "websearch":
 
-        print("---ROUTE QUESTION TO WEB SEARCH---")
+        print(
+            "---ROUTE QUESTION TO WEB SEARCH---"
+        )
 
         return "websearch"
 
-    print("---ROUTE QUESTION TO RAG---")
+    print(
+        "---ROUTE QUESTION TO RAG---"
+    )
 
     return "retrieve"
 
 
-def mark_local_route(state: GraphState) -> dict:
-    """
-    Mark the response route as local RAG.
-    """
+def mark_local_route(
+    state: GraphState,
+) -> dict:
+
     return {
         "route": "local"
     }
 
 
-def mark_web_route(state: GraphState) -> dict:
-    """
-    Mark the response route as web search.
-    """
+def mark_web_route(
+    state: GraphState,
+) -> dict:
+
     return {
         "route": "web"
+    }
+
+
+def mark_grounded(
+    state: GraphState,
+) -> dict:
+
+    return {
+        "grounded": True
+    }
+
+
+def mark_not_grounded(
+    state: GraphState,
+) -> dict:
+
+    return {
+        "grounded": False
+    }
+
+
+def mark_answers_question(
+    state: GraphState,
+) -> dict:
+
+    return {
+        "answers_question": True
+    }
+
+
+def mark_does_not_answer_question(
+    state: GraphState,
+) -> dict:
+
+    return {
+        "answers_question": False
     }
 
 
@@ -208,13 +279,33 @@ workflow.add_node(
 )
 
 workflow.add_node(
+    "mark_grounded",
+    mark_grounded,
+)
+
+workflow.add_node(
+    "mark_not_grounded",
+    mark_not_grounded,
+)
+
+workflow.add_node(
+    "mark_answers_question",
+    mark_answers_question,
+)
+
+workflow.add_node(
+    "mark_does_not_answer_question",
+    mark_does_not_answer_question,
+)
+
+workflow.add_node(
     "build_response",
     build_response,
 )
 
 
 # ---------------------------------------------------------
-# START → ROUTER
+# START
 # ---------------------------------------------------------
 
 workflow.add_conditional_edges(
@@ -228,7 +319,7 @@ workflow.add_conditional_edges(
 
 
 # ---------------------------------------------------------
-# LOCAL RAG PATH
+# LOCAL RAG
 # ---------------------------------------------------------
 
 workflow.add_edge(
@@ -272,17 +363,37 @@ workflow.add_edge(
 
 
 # ---------------------------------------------------------
-# GENERATION QUALITY CONTROL
+# GENERATION
 # ---------------------------------------------------------
 
 workflow.add_conditional_edges(
     "generate",
     grade_generation_grounded_in_documents_and_question,
     {
-        "useful": "build_response",
+        "useful": "mark_grounded",
         "retry": "increment_retry",
-        "not useful": "mark_web_route",
+        "not useful": "mark_not_grounded",
     },
+)
+
+
+# ---------------------------------------------------------
+# GROUNDING
+# ---------------------------------------------------------
+
+workflow.add_edge(
+    "mark_grounded",
+    "mark_answers_question",
+)
+
+workflow.add_edge(
+    "mark_not_grounded",
+    "mark_answers_question",
+)
+
+workflow.add_edge(
+    "mark_answers_question",
+    "build_response",
 )
 
 
