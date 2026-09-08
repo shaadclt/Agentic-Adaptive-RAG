@@ -56,21 +56,9 @@ def grade_generation_grounded_in_documents_and_question(
     print("---CHECK HALLUCINATIONS---")
 
     question = state["question"]
-
-    documents = state.get(
-        "documents",
-        [],
-    )
-
-    generation = state.get(
-        "generation",
-        "",
-    )
-
-    retry_count = state.get(
-        "retry_count",
-        0,
-    )
+    documents = state.get("documents", [])
+    generation = state.get("generation", "")
+    retry_count = state.get("retry_count", 0)
 
     hallucination_score = hallucination_grader.invoke(
         {
@@ -83,57 +71,55 @@ def grade_generation_grounded_in_documents_and_question(
         hallucination_score.binary_score
     )
 
-    if grounded == "yes":
+    if grounded != "yes":
 
         print(
-            "---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---"
+            "---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS---"
         )
 
-        print(
-            "---GRADE GENERATION VS QUESTION---"
-        )
-
-        answer_score = answer_grader.invoke(
-            {
-                "question": question,
-                "generation": generation,
-            }
-        )
-
-        answers_question = normalize_binary_score(
-            answer_score.binary_score
-        )
-
-        if answers_question == "yes":
+        if retry_count < MAX_GENERATION_RETRIES:
 
             print(
-                "---DECISION: GENERATION ADDRESSES QUESTION---"
+                f"---RETRY GENERATION "
+                f"({retry_count + 1}/{MAX_GENERATION_RETRIES})---"
             )
 
-            return "useful"
+            return "retry"
 
         print(
-            "---DECISION: GENERATION DOES NOT ADDRESS QUESTION---"
+            "---DECISION: MAXIMUM RETRIES REACHED, "
+            "USE WEB SEARCH---"
         )
 
         return "not useful"
 
     print(
-        "---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS---"
+        "---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---"
     )
 
-    if retry_count < MAX_GENERATION_RETRIES:
+    print("---GRADE GENERATION VS QUESTION---")
+
+    answer_score = answer_grader.invoke(
+        {
+            "question": question,
+            "generation": generation,
+        }
+    )
+
+    answers_question = normalize_binary_score(
+        answer_score.binary_score
+    )
+
+    if answers_question == "yes":
 
         print(
-            f"---RETRY GENERATION "
-            f"({retry_count + 1}/{MAX_GENERATION_RETRIES})---"
+            "---DECISION: GENERATION ADDRESSES QUESTION---"
         )
 
-        return "retry"
+        return "useful"
 
     print(
-        "---DECISION: MAXIMUM RETRIES REACHED, "
-        "USE WEB SEARCH---"
+        "---DECISION: GENERATION DOES NOT ADDRESS QUESTION---"
     )
 
     return "not useful"
