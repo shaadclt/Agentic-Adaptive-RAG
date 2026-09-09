@@ -24,17 +24,8 @@ SUPPORTED_EXTENSIONS = {
     ".md",
 }
 
-
-# ---------------------------------------------------------
-# EVALUATION
-# ---------------------------------------------------------
-
 evaluation_tracker = EvaluationTracker()
 
-
-# ---------------------------------------------------------
-# MENU
-# ---------------------------------------------------------
 
 def print_menu() -> None:
     print()
@@ -49,10 +40,6 @@ def print_menu() -> None:
     print("6. Exit")
     print("=" * 60)
 
-
-# ---------------------------------------------------------
-# ADD DOCUMENTS
-# ---------------------------------------------------------
 
 def add_documents() -> None:
     print()
@@ -75,25 +62,19 @@ def add_documents() -> None:
     valid_paths = []
 
     for file_path in file_paths:
-
         path = Path(file_path)
 
         if not path.exists():
-            print(
-                f"---FILE NOT FOUND: {file_path}---"
-            )
+            print(f"---FILE NOT FOUND: {file_path}---")
             continue
 
         if not path.is_file():
-            print(
-                f"---NOT A FILE: {file_path}---"
-            )
+            print(f"---NOT A FILE: {file_path}---")
             continue
 
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             print(
-                f"---UNSUPPORTED FILE TYPE: "
-                f"{path.name}---"
+                f"---UNSUPPORTED FILE TYPE: {path.name}---"
             )
             continue
 
@@ -105,16 +86,11 @@ def add_documents() -> None:
 
     print()
     print(
-        f"Found {len(valid_paths)} "
-        f"valid document(s)."
+        f"Found {len(valid_paths)} valid document(s)."
     )
 
     build_vectorstore(valid_paths)
 
-
-# ---------------------------------------------------------
-# VIEW KNOWLEDGE BASE
-# ---------------------------------------------------------
 
 def view_knowledge_base() -> None:
     print()
@@ -123,9 +99,7 @@ def view_knowledge_base() -> None:
     documents = list_documents()
 
     if not documents:
-        print(
-            "---KNOWLEDGE BASE IS EMPTY---"
-        )
+        print("---KNOWLEDGE BASE IS EMPTY---")
         return
 
     print(
@@ -139,33 +113,24 @@ def view_knowledge_base() -> None:
         documents,
         start=1,
     ):
-
         print(
             f"[{index}] "
             f"{document['file_name']}"
         )
-
         print(
             f"    Type: "
             f"{document['file_type']}"
         )
-
         print(
             f"    ID: "
             f"{document['document_id']}"
         )
-
         print(
             f"    Source: "
             f"{document['source']}"
         )
-
         print()
 
-
-# ---------------------------------------------------------
-# REMOVE DOCUMENT
-# ---------------------------------------------------------
 
 def remove_document() -> None:
     print()
@@ -174,16 +139,13 @@ def remove_document() -> None:
     documents = list_documents()
 
     if not documents:
-        print(
-            "---KNOWLEDGE BASE IS EMPTY---"
-        )
+        print("---KNOWLEDGE BASE IS EMPTY---")
         return
 
     for index, document in enumerate(
         documents,
         start=1,
     ):
-
         print(
             f"{index}. "
             f"{document['file_name']}"
@@ -202,16 +164,13 @@ def remove_document() -> None:
     index = int(choice)
 
     if index < 1 or index > len(documents):
-        print(
-            "---INVALID DOCUMENT NUMBER---"
-        )
+        print("---INVALID DOCUMENT NUMBER---")
         return
 
     document = documents[index - 1]
 
     confirm = input(
-        f"Remove "
-        f"'{document['file_name']}'? [y/N]: "
+        f"Remove '{document['file_name']}'? [y/N]: "
     ).strip().lower()
 
     if confirm != "y":
@@ -228,24 +187,15 @@ def remove_document() -> None:
             f"{document['file_name']}---"
         )
     else:
-        print(
-            "---DOCUMENT NOT FOUND---"
-        )
+        print("---DOCUMENT NOT FOUND---")
 
-
-# ---------------------------------------------------------
-# DISPLAY SOURCES
-# ---------------------------------------------------------
 
 def display_sources(
     sources: list[dict],
 ) -> None:
-
     if not sources:
         print()
-        print(
-            "---NO SOURCES AVAILABLE---"
-        )
+        print("---NO SOURCES AVAILABLE---")
         return
 
     print()
@@ -265,19 +215,13 @@ def display_sources(
         if source.get("type") == "web"
     ]
 
-    # -----------------------------------------------------
-    # LOCAL SOURCES
-    # -----------------------------------------------------
-
     if local_sources:
-
         print()
         print("Local documents:")
 
         displayed_files = set()
 
         for source in local_sources:
-
             file_name = source.get(
                 "file_name",
                 "Unknown document",
@@ -286,27 +230,17 @@ def display_sources(
             if file_name in displayed_files:
                 continue
 
-            displayed_files.add(
-                file_name
-            )
+            displayed_files.add(file_name)
 
-            print(
-                f"- {file_name}"
-            )
-
-    # -----------------------------------------------------
-    # WEB SOURCES
-    # -----------------------------------------------------
+            print(f"- {file_name}")
 
     if web_sources:
-
         print()
         print("Web sources:")
 
         displayed_urls = set()
 
         for source in web_sources:
-
             title = source.get(
                 "title",
                 "Web source",
@@ -322,22 +256,13 @@ def display_sources(
 
             displayed_urls.add(url)
 
-            print(
-                f"- {title}"
-            )
+            print(f"- {title}")
 
             if url:
-                print(
-                    f"  {url}"
-                )
+                print(f"  {url}")
 
-
-# ---------------------------------------------------------
-# ASK QUESTION
-# ---------------------------------------------------------
 
 def ask_question() -> None:
-
     print()
     print("--- ASK A QUESTION ---")
 
@@ -346,25 +271,13 @@ def ask_question() -> None:
     ).strip()
 
     if not question:
-
-        print(
-            "---QUESTION CANNOT BE EMPTY---"
-        )
-
+        print("---QUESTION CANNOT BE EMPTY---")
         return
 
     print()
     print("---PROCESSING QUESTION---")
 
-    # -----------------------------------------------------
-    # START LATENCY TIMER
-    # -----------------------------------------------------
-
     start_time = perf_counter()
-
-    # -----------------------------------------------------
-    # RUN AGENTIC RAG GRAPH
-    # -----------------------------------------------------
 
     result = app.invoke(
         {
@@ -373,18 +286,7 @@ def ask_question() -> None:
         }
     )
 
-    # -----------------------------------------------------
-    # CALCULATE LATENCY
-    # -----------------------------------------------------
-
-    latency = (
-        perf_counter()
-        - start_time
-    )
-
-    # -----------------------------------------------------
-    # EXTRACT ANSWER
-    # -----------------------------------------------------
+    latency = perf_counter() - start_time
 
     answer = result.get(
         "answer",
@@ -394,26 +296,12 @@ def ask_question() -> None:
         ),
     )
 
-    # -----------------------------------------------------
-    # EXTRACT SOURCES
-    # -----------------------------------------------------
-
-    sources = result.get(
-        "sources"
-    )
+    sources = result.get("sources")
 
     if sources is None:
-
         sources = extract_sources(
-            result.get(
-                "documents",
-                [],
-            )
+            result.get("documents", [])
         )
-
-    # -----------------------------------------------------
-    # EXTRACT EVALUATION DATA
-    # -----------------------------------------------------
 
     route = result.get(
         "route",
@@ -445,10 +333,6 @@ def ask_question() -> None:
         True,
     )
 
-    # -----------------------------------------------------
-    # STORE EVALUATION RESULT
-    # -----------------------------------------------------
-
     evaluation_result = EvaluationResult(
         question=question,
         answer=answer,
@@ -466,47 +350,26 @@ def ask_question() -> None:
         evaluation_result
     )
 
-    # -----------------------------------------------------
-    # DISPLAY ANSWER
-    # -----------------------------------------------------
-
     print()
     print("=" * 60)
     print("ANSWER")
     print("=" * 60)
-
     print(answer)
 
-    # -----------------------------------------------------
-    # DISPLAY SOURCES
-    # -----------------------------------------------------
-
-    display_sources(
-        sources
-    )
-
-    # -----------------------------------------------------
-    # DISPLAY METADATA
-    # -----------------------------------------------------
+    display_sources(sources)
 
     print()
-
-    print(
-        f"Route: {route}"
-    )
-
+    print(f"Route: {route}")
     print(
         f"Generation retries: "
         f"{retry_count}"
     )
-
     print(
         f"Latency: "
         f"{latency:.2f} seconds"
     )
 
     if retrieved_documents:
-
         print(
             f"Retrieved documents: "
             f"{retrieved_documents}"
@@ -530,12 +393,7 @@ def ask_question() -> None:
     print("=" * 60)
 
 
-# ---------------------------------------------------------
-# VIEW EVALUATION
-# ---------------------------------------------------------
-
 def view_evaluation() -> None:
-
     print()
     print("=" * 60)
     print("RAG EVALUATION")
@@ -544,18 +402,12 @@ def view_evaluation() -> None:
     summary = evaluation_tracker.summary()
 
     if summary["total_questions"] == 0:
-
         print()
-        print(
-            "---NO QUESTIONS EVALUATED YET---"
-        )
-
+        print("---NO QUESTIONS EVALUATED YET---")
         print("=" * 60)
-
         return
 
     print()
-
     print(
         f"Total questions: "
         f"{summary['total_questions']}"
@@ -583,17 +435,16 @@ def view_evaluation() -> None:
     )
 
     print()
+    print(
+        "Evaluation history: "
+        "evaluation_history.jsonl"
+    )
+
     print("=" * 60)
 
 
-# ---------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------
-
 def main() -> None:
-
     while True:
-
         print_menu()
 
         choice = input(
@@ -601,43 +452,27 @@ def main() -> None:
         ).strip()
 
         if choice == "1":
-
             add_documents()
 
         elif choice == "2":
-
             view_knowledge_base()
 
         elif choice == "3":
-
             remove_document()
 
         elif choice == "4":
-
             ask_question()
 
         elif choice == "5":
-
             view_evaluation()
 
         elif choice == "6":
-
-            print(
-                "---GOODBYE---"
-            )
-
+            print("---GOODBYE---")
             break
 
         else:
+            print("---INVALID OPTION---")
 
-            print(
-                "---INVALID OPTION---"
-            )
-
-
-# ---------------------------------------------------------
-# ENTRY POINT
-# ---------------------------------------------------------
 
 if __name__ == "__main__":
     main()
