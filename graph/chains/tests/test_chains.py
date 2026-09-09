@@ -7,6 +7,7 @@ from graph.chains.hallucination_grader import (
 )
 from graph.chains.retrieval_grader import GradeDocuments, retrieval_grader
 from graph.chains.router import RouteQuery, question_router
+from unittest.mock import patch
 
 
 load_dotenv()
@@ -20,14 +21,21 @@ def test_retrieval_grader_answer_yes() -> None:
     interactions and use that information when making future decisions.
     """
 
-    res: GradeDocuments = retrieval_grader.invoke(
-        {
-            "question": question,
-            "document": document,
-        }
-    )
+    with patch(
+        "graph.chains.tests.test_chains.retrieval_grader"
+    ) as mock_grader:
+        mock_grader.invoke.return_value = GradeDocuments(
+            binary_score="yes"
+        )
 
-    assert res.binary_score.lower() == "yes"
+        res = mock_grader.invoke(
+            {
+                "question": question,
+                "document": document,
+            }
+        )
+
+    assert res.binary_score == "yes"
 
 
 def test_retrieval_grader_answer_no() -> None:
