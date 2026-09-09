@@ -5,7 +5,6 @@ from evaluation import (
 
 
 def test_evaluation_result():
-
     result = EvaluationResult(
         question="What is Chroma?",
         answer="Chroma is a vector database.",
@@ -19,22 +18,15 @@ def test_evaluation_result():
     )
 
     assert result.question == "What is Chroma?"
-
     assert result.route == "local"
-
     assert result.retrieved_documents == 4
-
     assert result.relevant_documents == 3
-
     assert result.retrieval_relevance_rate == 0.75
-
     assert result.grounded is True
-
     assert result.answers_question is True
 
 
 def test_evaluation_result_zero_documents():
-
     result = EvaluationResult(
         question="Test question",
         answer="Test answer",
@@ -43,9 +35,10 @@ def test_evaluation_result_zero_documents():
     assert result.retrieval_relevance_rate == 0.0
 
 
-def test_evaluation_tracker():
-
-    tracker = EvaluationTracker()
+def test_evaluation_tracker(tmp_path):
+    tracker = EvaluationTracker(
+        storage_path=tmp_path / "evaluation_history.jsonl"
+    )
 
     tracker.add(
         EvaluationResult(
@@ -74,22 +67,18 @@ def test_evaluation_tracker():
     summary = tracker.summary()
 
     assert summary["total_questions"] == 2
-
     assert summary["average_latency_seconds"] == 2.0
-
     assert summary["grounded_rate"] == 1.0
-
     assert summary["answer_quality_rate"] == 0.5
-
     assert summary["average_retries"] == 0.5
 
 
-def test_tracker_empty():
-
-    tracker = EvaluationTracker()
+def test_tracker_empty(tmp_path):
+    tracker = EvaluationTracker(
+        storage_path=tmp_path / "evaluation_history.jsonl"
+    )
 
     summary = tracker.summary()
 
     assert summary["total_questions"] == 0
-
     assert summary["grounded_rate"] == 0.0
