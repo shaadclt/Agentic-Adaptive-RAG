@@ -1,13 +1,22 @@
 import json
+import sys
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List
 
+
+# Add the project root to Python's import path.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
 from graph.graph import app
 
 
-DATASET_FILE = Path("evaluation/benchmark_dataset.json")
-RESULTS_FILE = Path("evaluation/benchmark_results.json")
+DATASET_FILE = PROJECT_ROOT / "evaluation" / "benchmark_dataset.json"
+RESULTS_FILE = PROJECT_ROOT / "evaluation" / "benchmark_results.json"
 
 
 def load_dataset() -> List[Dict[str, Any]]:
@@ -15,7 +24,10 @@ def load_dataset() -> List[Dict[str, Any]]:
         return json.load(file)
 
 
-def contains_expected_answer(answer: str, expected_terms: List[str]) -> bool:
+def contains_expected_answer(
+    answer: str,
+    expected_terms: List[str],
+) -> bool:
     if not expected_terms:
         return True
 
@@ -48,17 +60,39 @@ def evaluate_question(item: Dict[str, Any]) -> Dict[str, Any]:
 
     latency = perf_counter() - start
 
-    answer = result.get("answer", result.get("generation", ""))
+    answer = result.get(
+        "answer",
+        result.get("generation", ""),
+    )
+
     actual_route = result.get("route", "unknown")
 
     grounded = bool(result.get("grounded", False))
-    answers_question = bool(result.get("answers_question", False))
+    answers_question = bool(
+        result.get("answers_question", False)
+    )
+
+    retrieved_documents = result.get(
+        "retrieved_documents",
+        0,
+    )
+
+    relevant_documents = result.get(
+        "relevant_documents",
+        0,
+    )
 
     routing_correct = actual_route == expected_route
 
     answer_contains_expected = contains_expected_answer(
         answer,
         expected_terms,
+    )
+
+    retrieval_relevance_rate = (
+        relevant_documents / retrieved_documents
+        if retrieved_documents > 0
+        else 0.0
     )
 
     passed = (
@@ -78,14 +112,9 @@ def evaluate_question(item: Dict[str, Any]) -> Dict[str, Any]:
         "answer_contains_expected": answer_contains_expected,
         "grounded": grounded,
         "answers_question": answers_question,
-        "retrieved_documents": result.get("retrieved_documents", 0),
-        "relevant_documents": result.get("relevant_documents", 0),
-        "retrieval_relevance_rate": (
-            result.get("relevant_documents", 0)
-            / result.get("retrieved_documents", 1)
-            if result.get("retrieved_documents", 0) > 0
-            else 0.0
-        ),
+        "retrieved_documents": retrieved_documents,
+        "relevant_documents": relevant_documents,
+        "retrieval_relevance_rate": retrieval_relevance_rate,
         "retry_count": result.get("retry_count", 0),
         "latency_seconds": latency,
         "passed": passed,
@@ -96,15 +125,38 @@ def evaluate_question(item: Dict[str, Any]) -> Dict[str, Any]:
     print(f"Routing correct: {routing_correct}")
     print(f"Grounded: {grounded}")
     print(f"Answers question: {answers_question}")
-    print(f"Expected terms found: {answer_contains_expected}")
-    print(f"Retries: {evaluation['retry_count']}")
-    print(f"Latency: {latency:.2f}s")
+    print(
+        f"Expected terms found: "
+        f"{answer_contains_expected}"
+    )
+    print(
+        f"Retrieved documents: "
+        f"{retrieved_documents}"
+    )
+    print(
+        f"Relevant documents: "
+        f"{relevant_documents}"
+    )
+    print(
+        f"Retrieval relevance: "
+        f"{retrieval_relevance_rate:.1%}"
+    )
+    print(
+        f"Retries: "
+        f"{evaluation['retry_count']}"
+    )
+    print(
+        f"Latency: "
+        f"{latency:.2f}s"
+    )
     print(f"PASS: {passed}")
 
     return evaluation
 
 
-def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_summary(
+    results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
     if not results:
         return {
             "questions_evaluated": 0,
@@ -159,14 +211,18 @@ def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "routing_accuracy": routing_correct / total,
         "grounded_answer_rate": grounded / total,
         "answer_quality_rate": answer_quality / total,
-        "average_retrieval_relevance": retrieval_relevance / total,
+        "average_retrieval_relevance": (
+            retrieval_relevance / total
+        ),
         "average_latency_seconds": latency / total,
         "average_retries": retries / total,
         "overall_pass_rate": passed / total,
     }
 
 
-def print_summary(summary: Dict[str, Any]) -> None:
+def print_summary(
+    summary: Dict[str, Any],
+) -> None:
     print()
     print()
     print("Evaluation Benchmark")
@@ -210,14 +266,20 @@ def save_results(
     results: List[Dict[str, Any]],
     summary: Dict[str, Any],
 ) -> None:
-    RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RESULTS_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     output = {
         "summary": summary,
         "results": results,
     }
 
-    with RESULTS_FILE.open("w", encoding="utf-8") as file:
+    with RESULTS_FILE.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
         json.dump(
             output,
             file,
@@ -230,7 +292,10 @@ def main() -> None:
     dataset = load_dataset()
 
     print()
-    print(f"Loaded {len(dataset)} benchmark questions.")
+    print(
+        f"Loaded {len(dataset)} "
+        f"benchmark questions."
+    )
 
     results = []
 
@@ -238,14 +303,19 @@ def main() -> None:
         try:
             result = evaluate_question(item)
             results.append(result)
+
         except Exception as exc:
             print()
-            print(f"ERROR evaluating question: {exc}")
+            print(
+                f"ERROR evaluating question: {exc}"
+            )
 
             results.append(
                 {
                     "question": item["question"],
-                    "expected_route": item["expected_route"],
+                    "expected_route": item[
+                        "expected_route"
+                    ],
                     "actual_route": "error",
                     "routing_correct": False,
                     "answer": "",
@@ -268,12 +338,18 @@ def main() -> None:
 
     summary = build_summary(results)
 
-    save_results(results, summary)
+    save_results(
+        results,
+        summary,
+    )
 
     print_summary(summary)
 
     print()
-    print(f"Detailed results saved to: {RESULTS_FILE}")
+    print(
+        "Detailed results saved to: "
+        f"{RESULTS_FILE}"
+    )
 
 
 if __name__ == "__main__":
