@@ -304,3 +304,4 @@ data/documents/test.txt
 evaluation_history.jsonl
 __pycache__/
 .pytest_cache/
+evaluation/benchmark_results.json
