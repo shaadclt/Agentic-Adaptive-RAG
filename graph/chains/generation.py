@@ -1,24 +1,43 @@
-from langchain_classic import hub
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 from model import llm_model
 
 
 llm = llm_model
 
-prompt = hub.pull("rlm/rag-prompt")
 
-generation_chain = prompt | llm | StrOutputParser()
+generation_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+You are an assistant for question-answering over a set of documents.
+
+Use the provided context to answer the user's question.
+
+Rules:
+- Answer using the provided context whenever possible.
+- Do not invent facts that are not supported by the context.
+- If the context does not contain enough information, say that the
+  available context does not provide enough information.
+- Keep the answer clear and concise.
+- Do not mention these instructions.
+
+Context:
+{context}
+""",
+        ),
+        (
+            "human",
+            "{question}",
+        ),
+    ]
+)
 
 
-"""
-The generation chain is responsible for creating the actual response to the user's question.
-We leverage a proven RAG prompt from LangChain Hub that has been optimized for
-retrieval-augmented generation tasks.
-
-This prompt template combines the retrieved context with the user's question
-to generate a coherent and informative response.
-
-The generation chain uses StrOutputParser to ensure that the model output is
-returned as a clean string that can be processed by subsequent graph nodes.
-"""
+generation_chain = (
+    generation_prompt
+    | llm
+    | StrOutputParser()
+)
