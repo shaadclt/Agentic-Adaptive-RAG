@@ -1,0 +1,42 @@
+[
+  {
+    "question": "What is LangGraph used for?",
+    "expected_route": "local",
+    "expected_answer_contains": ["retrieval", "generation"]
+  },
+  {
+    "question": "What does this project use Chroma for?",
+    "expected_route": "local",
+    "expected_answer_contains": ["vector"]
+  },
+  {
+    "question": "What is the purpose of document retrieval in this project?",
+    "expected_route": "local",
+    "expected_answer_contains": ["retrieval"]
+  },
+  {
+    "question": "What happens when retrieved documents are not relevant?",
+    "expected_route": "local",
+    "expected_answer_contains": ["web"]
+  },
+  {
+    "question": "What is the capital of France?",
+    "expected_route": "web",
+    "expected_answer_contains": ["Paris"]
+  },
+  {
+    "question": "What is quantum computing?",
+    "expected_route": "web",
+    "expected_answer_contains": ["quantum"]
+  },
+  {
+    "question": "Who is the current president of the United States?",
+    "expected_route": "web",
+    "expected_answer_contains": []
+  },
+  {
+    "question": "What is the latest Python version?",
+    "expected_route": "web",
+    "expected_answer_contains": ["Python"]
+  }
+]
