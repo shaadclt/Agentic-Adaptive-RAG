@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from graph.chains.answer_grader import answer_grader
 from graph.chains.hallucination_grader import hallucination_grader
 from graph.chains.router import question_router
+from graph.context import format_documents
 
 from graph.nodes.build_response import build_response
 from graph.nodes.generate import generate
@@ -36,8 +37,8 @@ def retrieve_router_context(
     """
     Retrieve candidate evidence once before routing.
 
-    The same candidate documents can then be reused by
-    the local RAG path.
+    The retrieved candidate documents are reused by the
+    local RAG path.
     """
 
     print("---RETRIEVE ROUTER CONTEXT---")
@@ -52,33 +53,9 @@ def retrieve_router_context(
         :ROUTER_CONTEXT_DOCUMENTS
     ]
 
-    context_parts = []
-
-    total_chars = 0
-
-    for document in candidate_documents:
-
-        content = document.page_content.strip()
-
-        if not content:
-            continue
-
-        remaining = (
-            ROUTER_CONTEXT_CHARS
-            - total_chars
-        )
-
-        if remaining <= 0:
-            break
-
-        content = content[:remaining]
-
-        context_parts.append(content)
-
-        total_chars += len(content)
-
-    context = "\n\n".join(
-        context_parts
+    context = format_documents(
+        candidate_documents,
+        max_chars=ROUTER_CONTEXT_CHARS,
     )
 
     print(
@@ -197,10 +174,14 @@ def evaluate_generation(
         "",
     )
 
+    context = format_documents(
+        documents
+    )
+
     hallucination_score = (
         hallucination_grader.invoke(
             {
-                "documents": documents,
+                "documents": context,
                 "generation": generation,
             }
         )
@@ -365,19 +346,11 @@ workflow.add_node(
 )
 
 
-# ---------------------------------------------------------
-# Initial retrieval happens exactly once.
-# ---------------------------------------------------------
-
 workflow.add_edge(
     START,
     "retrieve_router_context",
 )
 
-
-# ---------------------------------------------------------
-# Evidence-aware routing.
-# ---------------------------------------------------------
 
 workflow.add_conditional_edges(
     "retrieve_router_context",
@@ -388,11 +361,6 @@ workflow.add_conditional_edges(
     },
 )
 
-
-# ---------------------------------------------------------
-# Local RAG.
-# `retrieve` reuses candidate_documents.
-# ---------------------------------------------------------
 
 workflow.add_edge(
     "mark_local_route",
@@ -415,10 +383,6 @@ workflow.add_conditional_edges(
 )
 
 
-# ---------------------------------------------------------
-# Web path.
-# ---------------------------------------------------------
-
 workflow.add_edge(
     "mark_web_route",
     "websearch",
@@ -429,10 +393,6 @@ workflow.add_edge(
     "generate",
 )
 
-
-# ---------------------------------------------------------
-# Generation and quality control.
-# ---------------------------------------------------------
 
 workflow.add_edge(
     "generate",
