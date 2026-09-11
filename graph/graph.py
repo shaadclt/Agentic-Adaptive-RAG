@@ -1,67 +1,46 @@
-from typing import Any
+from typing import Any, Dict
 
 from langgraph.graph import END, START, StateGraph
 
 from graph.chains.answer_grader import answer_grader
-from graph.chains.hallucination_grader import (
-    hallucination_grader,
-)
+from graph.chains.hallucination_grader import hallucination_grader
 from graph.chains.router import question_router
 
 from graph.nodes.build_response import build_response
 from graph.nodes.generate import generate
-from graph.nodes.grade_documents import (
-    grade_documents,
-)
-from graph.nodes.increment_retry import (
-    increment_retry,
-)
+from graph.nodes.grade_documents import grade_documents
+from graph.nodes.increment_retry import increment_retry
 from graph.nodes.retrieve import retrieve
 from graph.nodes.web_search import web_search
 
 from graph.state import GraphState
-
 from retrieval import retriever
 
 
 MAX_GENERATION_RETRIES = 2
 
 ROUTER_CONTEXT_DOCUMENTS = 4
-
 ROUTER_CONTEXT_CHARS = 6000
 
 
-def normalize_binary_score(
-    score: Any,
-) -> str:
-
+def normalize_binary_score(score: Any) -> str:
     if isinstance(score, bool):
-        return (
-            "yes"
-            if score
-            else "no"
-        )
+        return "yes" if score else "no"
 
-    return str(
-        score
-    ).strip().lower()
+    return str(score).strip().lower()
 
 
 def retrieve_router_context(
     state: GraphState,
-) -> dict:
+) -> Dict[str, Any]:
     """
-    Retrieve local evidence before the initial
-    routing decision.
+    Retrieve candidate evidence once before routing.
 
-    This gives the router actual knowledge-base
-    evidence instead of asking it to route using
-    the question alone.
+    The same candidate documents can then be reused by
+    the local RAG path.
     """
 
-    print(
-        "---RETRIEVE ROUTER CONTEXT---"
-    )
+    print("---RETRIEVE ROUTER CONTEXT---")
 
     question = state["question"]
 
@@ -69,7 +48,7 @@ def retrieve_router_context(
         question
     )
 
-    context_documents = documents[
+    candidate_documents = documents[
         :ROUTER_CONTEXT_DOCUMENTS
     ]
 
@@ -77,13 +56,9 @@ def retrieve_router_context(
 
     total_chars = 0
 
-    for document in context_documents:
+    for document in candidate_documents:
 
-        content = getattr(
-            document,
-            "page_content",
-            "",
-        )
+        content = document.page_content.strip()
 
         if not content:
             continue
@@ -96,30 +71,24 @@ def retrieve_router_context(
         if remaining <= 0:
             break
 
-        content = content[
-            :remaining
-        ]
+        content = content[:remaining]
 
-        context_parts.append(
-            content
-        )
+        context_parts.append(content)
 
-        total_chars += len(
-            content
-        )
+        total_chars += len(content)
 
-    context = (
-        "\n\n---\n\n".join(
-            context_parts
-        )
+    context = "\n\n".join(
+        context_parts
     )
 
     print(
         "---ROUTER CONTEXT: "
-        f"{len(context_parts)} DOCUMENTS---"
+        f"{len(candidate_documents)} DOCUMENTS---"
     )
 
     return {
+        "question": question,
+        "candidate_documents": candidate_documents,
         "router_context": context,
     }
 
@@ -127,21 +96,10 @@ def retrieve_router_context(
 def route_question(
     state: GraphState,
 ) -> str:
-    """
-    Route the question using retrieved local
-    evidence.
 
-    The router sees both the question and the
-    top local retrieval results.
-    """
+    print("---ROUTE QUESTION---")
 
-    print(
-        "---ROUTE QUESTION---"
-    )
-
-    question = state[
-        "question"
-    ]
+    question = state["question"]
 
     context = state.get(
         "router_context",
@@ -155,10 +113,8 @@ def route_question(
         }
     )
 
-    if (
-        route.datasource
-        == "websearch"
-    ):
+    if route.datasource == "websearch":
+
         print(
             "---ROUTER DECISION: "
             "WEB SEARCH---"
@@ -176,7 +132,7 @@ def route_question(
 
 def mark_local_route(
     state: GraphState,
-) -> dict:
+) -> Dict[str, Any]:
 
     return {
         "route": "local"
@@ -185,7 +141,7 @@ def mark_local_route(
 
 def mark_web_route(
     state: GraphState,
-) -> dict:
+) -> Dict[str, Any]:
 
     return {
         "route": "web"
@@ -223,15 +179,13 @@ def decide_to_generate(
 
 def evaluate_generation(
     state: GraphState,
-) -> dict:
+) -> Dict[str, Any]:
 
     print(
         "---CHECK HALLUCINATIONS---"
     )
 
-    question = state[
-        "question"
-    ]
+    question = state["question"]
 
     documents = state.get(
         "documents",
@@ -262,8 +216,8 @@ def evaluate_generation(
     if not grounded:
 
         print(
-            "---DECISION: GENERATION IS NOT "
-            "GROUNDED IN DOCUMENTS---"
+            "---DECISION: GENERATION IS "
+            "NOT GROUNDED IN DOCUMENTS---"
         )
 
         return {
@@ -272,21 +226,19 @@ def evaluate_generation(
         }
 
     print(
-        "---DECISION: GENERATION IS GROUNDED "
-        "IN DOCUMENTS---"
+        "---DECISION: GENERATION IS "
+        "GROUNDED IN DOCUMENTS---"
     )
 
     print(
         "---GRADE GENERATION VS QUESTION---"
     )
 
-    answer_score = (
-        answer_grader.invoke(
-            {
-                "question": question,
-                "generation": generation,
-            }
-        )
+    answer_score = answer_grader.invoke(
+        {
+            "question": question,
+            "generation": generation,
+        }
     )
 
     answers_question = (
@@ -335,19 +287,14 @@ def decide_after_evaluation(
         0,
     )
 
-    if (
-        grounded
-        and answers_question
-    ):
+    if grounded and answers_question:
+
         return "useful"
 
-    if (
-        retry_count
-        < MAX_GENERATION_RETRIES
-    ):
+    if retry_count < MAX_GENERATION_RETRIES:
 
         print(
-            f"---RETRY GENERATION "
+            "---RETRY GENERATION "
             f"({retry_count + 1}/"
             f"{MAX_GENERATION_RETRIES})---"
         )
@@ -356,8 +303,7 @@ def decide_after_evaluation(
 
     print(
         "---DECISION: MAXIMUM RETRIES "
-        "REACHED, RETURN BEST "
-        "AVAILABLE ANSWER---"
+        "REACHED, RETURN BEST AVAILABLE ANSWER---"
     )
 
     return "not useful"
@@ -419,11 +365,19 @@ workflow.add_node(
 )
 
 
+# ---------------------------------------------------------
+# Initial retrieval happens exactly once.
+# ---------------------------------------------------------
+
 workflow.add_edge(
     START,
     "retrieve_router_context",
 )
 
+
+# ---------------------------------------------------------
+# Evidence-aware routing.
+# ---------------------------------------------------------
 
 workflow.add_conditional_edges(
     "retrieve_router_context",
@@ -435,11 +389,15 @@ workflow.add_conditional_edges(
 )
 
 
+# ---------------------------------------------------------
+# Local RAG.
+# `retrieve` reuses candidate_documents.
+# ---------------------------------------------------------
+
 workflow.add_edge(
     "mark_local_route",
     "retrieve",
 )
-
 
 workflow.add_edge(
     "retrieve",
@@ -457,17 +415,24 @@ workflow.add_conditional_edges(
 )
 
 
+# ---------------------------------------------------------
+# Web path.
+# ---------------------------------------------------------
+
 workflow.add_edge(
     "mark_web_route",
     "websearch",
 )
-
 
 workflow.add_edge(
     "websearch",
     "generate",
 )
 
+
+# ---------------------------------------------------------
+# Generation and quality control.
+# ---------------------------------------------------------
 
 workflow.add_edge(
     "generate",
