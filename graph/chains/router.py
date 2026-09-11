@@ -7,67 +7,93 @@ from model import llm_model
 
 
 class RouteQuery(BaseModel):
-    """
-    Route a user query to the most relevant datasource.
-    """
-
-    datasource: Literal["vectorstore", "websearch"] = Field(
+    datasource: Literal[
+        "vectorstore",
+        "websearch",
+    ] = Field(
         ...,
         description=(
-            "Given a user question, choose whether the question "
-            "should be answered from the local vectorstore or web search."
+            "Choose vectorstore when the retrieved local "
+            "knowledge contains enough information to answer "
+            "the question. Choose websearch when the local "
+            "knowledge is insufficient or current external "
+            "information is required."
         ),
     )
 
 
 llm = llm_model
 
-structured_llm_router = llm.with_structured_output(RouteQuery)
+structured_llm_router = (
+    llm.with_structured_output(
+        RouteQuery
+    )
+)
 
 
 system = """
-You are an expert at routing user questions.
+You are an expert router for an adaptive
+Retrieval-Augmented Generation system.
 
-There are two possible data sources:
+Your task is to decide whether a user's question
+should be answered using the local vectorstore or
+web search.
 
-1. vectorstore
-   - Contains documents uploaded by the user.
-   - Prefer this source when the question may be answered using
-     the user's uploaded documents.
+You are given:
 
-2. websearch
-   - Used for current, external, or general information that is
-     unlikely to be available in the user's uploaded documents.
+1. The user's question.
+2. Retrieved excerpts from the local knowledge base.
 
-Prefer the vectorstore when the question relates to the user's
-uploaded knowledge.
+Choose "vectorstore" when the retrieved local
+excerpts contain enough relevant information to
+answer the question.
 
-Use websearch when the question clearly requires external or
-current information.
+Choose "websearch" when:
+
+- The local excerpts do not contain enough information.
+- The question requires current or changing information.
+- The question clearly requires external information.
+
+Important rules:
+
+- Base the decision primarily on the provided local evidence.
+- Do not choose websearch merely because the question is general.
+- If the local excerpts clearly discuss the subject of the
+  question, prefer vectorstore.
+- Questions about the user's project should normally use
+  vectorstore when the retrieved excerpts contain relevant
+  project information.
+- Current facts such as current office holders, latest versions,
+  recent events, prices, or current news should use websearch.
+- Do not assume information exists in the local knowledge base
+  if the retrieved excerpts do not support it.
 """
 
 
 route_prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", system),
-        ("human", "{question}"),
+        (
+            "system",
+            system,
+        ),
+        (
+            "human",
+            """
+User question:
+
+{question}
+
+
+Retrieved local knowledge:
+
+{context}
+""",
+        ),
     ]
 )
 
 
-question_router = route_prompt | structured_llm_router
-
-
-"""
-The query router is the system's first decision point.
-
-A RouteQuery Pydantic model constrains the router output to either
-"vectorstore" or "websearch".
-
-The graph gives priority to user-provided knowledge when a local
-knowledge base exists. The router remains available as a fallback
-decision mechanism when no local knowledge base is available.
-
-If local retrieval produces documents that are not relevant to the
-question, the graph automatically falls back to web search.
-"""
+question_router = (
+    route_prompt
+    | structured_llm_router
+)
