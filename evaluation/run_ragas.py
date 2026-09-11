@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -14,7 +15,8 @@ from ragas.metrics.collections import (
     faithfulness,
 )
 
-from graph.graph import app
+from graph.chains.generation import generation_chain
+from retrieval import retriever
 from model import embed_model, llm_model
 
 
@@ -31,61 +33,121 @@ RESULTS_FILE = (
 )
 
 
+# Groq has an 8,000 TPM limit in the current project configuration.
+# A small delay between questions reduces the chance of hitting
+# the rolling token-per-minute limit.
+REQUEST_DELAY_SECONDS = 8
+
+
 def load_benchmark() -> List[Dict[str, Any]]:
-    with DATASET_FILE.open("r", encoding="utf-8") as file:
+    with DATASET_FILE.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
         return json.load(file)
 
 
-def run_application(question: str) -> Dict[str, Any]:
-    return app.invoke(
+def run_rag(question: str) -> Dict[str, Any]:
+    """
+    Run only the core RAG pipeline required for RAGAS evaluation.
+
+    This intentionally bypasses:
+    - LLM routing
+    - retrieval grading
+    - hallucination grading
+    - answer grading
+    - retry loop
+
+    RAGAS will evaluate faithfulness and answer relevancy separately.
+    """
+
+    documents = retriever.invoke(question)
+
+    generation = generation_chain.invoke(
         {
+            "context": documents,
             "question": question,
-            "retry_count": 0,
         }
     )
+
+    return {
+        "documents": documents,
+        "generation": generation,
+    }
 
 
 def build_samples(
     benchmark: List[Dict[str, Any]],
 ) -> List[SingleTurnSample]:
+
     samples: List[SingleTurnSample] = []
 
-    for item in benchmark:
+    local_items = [
+        item
+        for item in benchmark
+        if item.get("expected_route") == "local"
+    ]
+
+    print(
+        f"Preparing {len(local_items)} local RAG "
+        "samples for RAGAS..."
+    )
+
+    for index, item in enumerate(local_items):
         question = item["question"]
 
-        # RAGAS is currently focused on the local RAG path.
-        if item.get("expected_route") != "local":
-            continue
-
         print()
-        print(f"Evaluating: {question}")
-
-        result = run_application(question)
-
-        documents = result.get("documents", [])
-
-        contexts = [
-            document.page_content
-            for document in documents
-            if getattr(document, "page_content", "")
-        ]
-
-        answer = result.get(
-            "generation",
-            result.get("answer", ""),
+        print("=" * 60)
+        print(
+            f"RAG sample {index + 1}/{len(local_items)}"
         )
+        print(f"Question: {question}")
+        print("=" * 60)
 
-        sample = SingleTurnSample(
-            user_input=question,
-            response=answer,
-            retrieved_contexts=contexts,
-        )
+        try:
+            result = run_rag(question)
 
-        samples.append(sample)
+            documents = result["documents"]
 
-        print(f"Route: {result.get('route', 'unknown')}")
-        print(f"Retrieved contexts: {len(contexts)}")
-        print(f"Retries: {result.get('retry_count', 0)}")
+            contexts = [
+                document.page_content
+                for document in documents
+                if getattr(
+                    document,
+                    "page_content",
+                    "",
+                )
+            ]
+
+            answer = result["generation"]
+
+            sample = SingleTurnSample(
+                user_input=question,
+                response=answer,
+                retrieved_contexts=contexts,
+            )
+
+            samples.append(sample)
+
+            print(
+                f"Retrieved contexts: {len(contexts)}"
+            )
+            print(
+                f"Answer length: {len(answer)} characters"
+            )
+
+        except Exception as exc:
+            print(
+                f"ERROR evaluating question: {exc}"
+            )
+
+        # Avoid immediately consuming the remaining TPM window.
+        if index < len(local_items) - 1:
+            print(
+                f"Waiting {REQUEST_DELAY_SECONDS}s "
+                "before next RAG request..."
+            )
+            time.sleep(REQUEST_DELAY_SECONDS)
 
     return samples
 
@@ -103,15 +165,19 @@ def save_results(result: Any) -> None:
             orient="records"
         )
 
-        summary = {}
+        summary: Dict[str, float] = {}
 
         for column in dataframe.columns:
             try:
                 summary[column] = float(
                     dataframe[column].mean()
                 )
-            except (TypeError, ValueError):
+            except (
+                TypeError,
+                ValueError,
+            ):
                 continue
+
     else:
         records = []
         summary = {}
@@ -140,8 +206,7 @@ def main() -> None:
 
     if not samples:
         raise RuntimeError(
-            "No local benchmark samples were available "
-            "for RAGAS evaluation."
+            "No RAGAS samples were successfully created."
         )
 
     dataset = EvaluationDataset(
@@ -152,6 +217,18 @@ def main() -> None:
     print("=" * 60)
     print("RAGAS EVALUATION")
     print("=" * 60)
+    print(
+        f"Samples: {len(samples)}"
+    )
+    print(
+        "Metrics: faithfulness, answer_relevancy"
+    )
+    print("=" * 60)
+
+    print()
+    print(
+        "Running RAGAS evaluation..."
+    )
 
     result = evaluate(
         dataset=dataset,
@@ -164,6 +241,10 @@ def main() -> None:
     )
 
     print()
+    print("=" * 60)
+    print("RAGAS RESULTS")
+    print("=" * 60)
+
     print(result)
 
     save_results(result)
