@@ -21,126 +21,52 @@ from retrieval import has_documents
 MAX_GENERATION_RETRIES = 2
 
 
-# =========================================================
-# HELPERS
-# =========================================================
-
 def normalize_binary_score(score: Any) -> str:
-    """
-    Normalize grader output to a lowercase yes/no string.
-    """
-
     if isinstance(score, bool):
         return "yes" if score else "no"
 
     return str(score).strip().lower()
 
 
-# =========================================================
-# INITIAL ROUTING
-# =========================================================
-
 def route_question(state: GraphState) -> str:
-    """
-    Decide whether to use the local knowledge base or
-    web search.
-
-    Local knowledge takes priority whenever documents
-    are available.
-    """
-
     print("---ROUTE QUESTION---")
 
-    # -----------------------------------------------------
-    # LOCAL KNOWLEDGE BASE AVAILABLE
-    # -----------------------------------------------------
-
     if has_documents():
-
-        print(
-            "---LOCAL KNOWLEDGE BASE AVAILABLE---"
-        )
-
-        print(
-            "---ROUTE QUESTION TO RAG---"
-        )
-
+        print("---LOCAL KNOWLEDGE BASE AVAILABLE---")
+        print("---ROUTE QUESTION TO RAG---")
         return "retrieve"
 
-    # -----------------------------------------------------
-    # NO LOCAL KNOWLEDGE BASE
-    # -----------------------------------------------------
-
-    print(
-        "---NO LOCAL KNOWLEDGE BASE---"
-    )
+    print("---NO LOCAL KNOWLEDGE BASE---")
 
     question = state["question"]
 
     route = question_router.invoke(
-        {
-            "question": question
-        }
+        {"question": question}
     )
 
     if route.datasource == "websearch":
-
-        print(
-            "---ROUTE QUESTION TO WEB SEARCH---"
-        )
-
+        print("---ROUTE QUESTION TO WEB SEARCH---")
         return "websearch"
 
-    print(
-        "---ROUTE QUESTION TO RAG---"
-    )
+    print("---ROUTE QUESTION TO RAG---")
 
     return "retrieve"
 
 
-# =========================================================
-# ROUTE MARKERS
-# =========================================================
-
-def mark_local_route(
-    state: GraphState,
-) -> dict:
-    """
-    Store local RAG as the selected route.
-    """
-
+def mark_local_route(state: GraphState) -> dict:
     return {
-        "route": "local"
+        "route": "local",
     }
 
 
-def mark_web_route(
-    state: GraphState,
-) -> dict:
-    """
-    Store web search as the selected route.
-    """
-
+def mark_web_route(state: GraphState) -> dict:
     return {
-        "route": "web"
+        "route": "web",
     }
 
 
-# =========================================================
-# DOCUMENT DECISION
-# =========================================================
-
-def decide_to_generate(
-    state: GraphState,
-) -> str:
-    """
-    Decide whether the retrieved local documents are
-    sufficient for generation.
-    """
-
-    print(
-        "---ASSESS GRADED DOCUMENTS---"
-    )
+def decide_to_generate(state: GraphState) -> str:
+    print("---ASSESS GRADED DOCUMENTS---")
 
     web_search_required = state.get(
         "web_search",
@@ -148,7 +74,6 @@ def decide_to_generate(
     )
 
     if web_search_required:
-
         print(
             "---DECISION: LOCAL DOCUMENTS INSUFFICIENT, "
             "INCLUDE WEB SEARCH---"
@@ -156,32 +81,13 @@ def decide_to_generate(
 
         return "websearch"
 
-    print(
-        "---DECISION: GENERATE---"
-    )
+    print("---DECISION: GENERATE---")
 
     return "generate"
 
 
-# =========================================================
-# GENERATION EVALUATION
-# =========================================================
-
-def evaluate_generation(
-    state: GraphState,
-) -> dict:
-    """
-    Evaluate the generated answer for:
-
-    1. Grounding in retrieved documents
-    2. Ability to answer the question
-
-    The evaluation metadata is persisted in GraphState.
-    """
-
-    print(
-        "---CHECK HALLUCINATIONS---"
-    )
+def evaluate_generation(state: GraphState) -> dict:
+    print("---CHECK HALLUCINATIONS---")
 
     question = state["question"]
 
@@ -195,17 +101,11 @@ def evaluate_generation(
         "",
     )
 
-    # -----------------------------------------------------
-    # HALLUCINATION / GROUNDING CHECK
-    # -----------------------------------------------------
-
-    hallucination_score = (
-        hallucination_grader.invoke(
-            {
-                "documents": documents,
-                "generation": generation,
-            }
-        )
+    hallucination_score = hallucination_grader.invoke(
+        {
+            "documents": documents,
+            "generation": generation,
+        }
     )
 
     grounded = (
@@ -216,7 +116,6 @@ def evaluate_generation(
     )
 
     if not grounded:
-
         print(
             "---DECISION: GENERATION IS NOT GROUNDED "
             "IN DOCUMENTS---"
@@ -232,13 +131,7 @@ def evaluate_generation(
         "IN DOCUMENTS---"
     )
 
-    # -----------------------------------------------------
-    # ANSWER QUALITY CHECK
-    # -----------------------------------------------------
-
-    print(
-        "---GRADE GENERATION VS QUESTION---"
-    )
+    print("---GRADE GENERATION VS QUESTION---")
 
     answer_score = answer_grader.invoke(
         {
@@ -255,14 +148,10 @@ def evaluate_generation(
     )
 
     if answers_question:
-
         print(
-            "---DECISION: GENERATION ADDRESSES "
-            "QUESTION---"
+            "---DECISION: GENERATION ADDRESSES QUESTION---"
         )
-
     else:
-
         print(
             "---DECISION: GENERATION DOES NOT "
             "ADDRESS QUESTION---"
@@ -274,21 +163,7 @@ def evaluate_generation(
     }
 
 
-# =========================================================
-# POST-EVALUATION DECISION
-# =========================================================
-
-def decide_after_evaluation(
-    state: GraphState,
-) -> str:
-    """
-    Decide whether to:
-
-    - accept the answer
-    - retry generation
-    - fall back to web search
-    """
-
+def decide_after_evaluation(state: GraphState) -> str:
     grounded = state.get(
         "grounded",
         False,
@@ -304,56 +179,31 @@ def decide_after_evaluation(
         0,
     )
 
-    # -----------------------------------------------------
-    # SUCCESS
-    # -----------------------------------------------------
-
+    # Successful answer.
     if grounded and answers_question:
-
         return "useful"
 
-    # -----------------------------------------------------
-    # NOT GROUNDED
-    # -----------------------------------------------------
-
-    if not grounded:
-
-        if retry_count < MAX_GENERATION_RETRIES:
-
-            print(
-                f"---RETRY GENERATION "
-                f"({retry_count + 1}/"
-                f"{MAX_GENERATION_RETRIES})---"
-            )
-
-            return "retry"
-
+    # Any failed evaluation can receive a bounded
+    # generation retry.
+    if retry_count < MAX_GENERATION_RETRIES:
         print(
-            "---DECISION: MAXIMUM RETRIES REACHED, "
-            "USE WEB SEARCH---"
+            f"---RETRY GENERATION "
+            f"({retry_count + 1}/{MAX_GENERATION_RETRIES})---"
         )
 
-        return "not useful"
+        return "retry"
 
-    # -----------------------------------------------------
-    # GROUNDED BUT DOES NOT ANSWER QUESTION
-    # -----------------------------------------------------
+    # Never loop indefinitely.
+    print(
+        "---DECISION: MAXIMUM RETRIES REACHED, "
+        "RETURN BEST AVAILABLE ANSWER---"
+    )
 
     return "not useful"
 
 
-# =========================================================
-# GRAPH
-# =========================================================
+workflow = StateGraph(GraphState)
 
-workflow = StateGraph(
-    GraphState
-)
-
-
-# =========================================================
-# NODES
-# =========================================================
 
 workflow.add_node(
     "retrieve",
@@ -401,10 +251,6 @@ workflow.add_node(
 )
 
 
-# =========================================================
-# START → INITIAL ROUTING
-# =========================================================
-
 workflow.add_conditional_edges(
     START,
     route_question,
@@ -414,10 +260,6 @@ workflow.add_conditional_edges(
     },
 )
 
-
-# =========================================================
-# LOCAL RAG PATH
-# =========================================================
 
 workflow.add_edge(
     "mark_local_route",
@@ -430,10 +272,6 @@ workflow.add_edge(
 )
 
 
-# =========================================================
-# DOCUMENT GRADING → GENERATION / WEB
-# =========================================================
-
 workflow.add_conditional_edges(
     "grade_documents",
     decide_to_generate,
@@ -443,10 +281,6 @@ workflow.add_conditional_edges(
     },
 )
 
-
-# =========================================================
-# WEB SEARCH PATH
-# =========================================================
 
 workflow.add_edge(
     "mark_web_route",
@@ -458,20 +292,11 @@ workflow.add_edge(
     "generate",
 )
 
-
-# =========================================================
-# GENERATION → EVALUATION
-# =========================================================
-
 workflow.add_edge(
     "generate",
     "evaluate_generation",
 )
 
-
-# =========================================================
-# EVALUATION → FINAL / RETRY / WEB
-# =========================================================
 
 workflow.add_conditional_edges(
     "evaluate_generation",
@@ -479,33 +304,20 @@ workflow.add_conditional_edges(
     {
         "useful": "build_response",
         "retry": "increment_retry",
-        "not useful": "mark_web_route",
+        "not useful": "build_response",
     },
 )
 
-
-# =========================================================
-# RETRY
-# =========================================================
 
 workflow.add_edge(
     "increment_retry",
     "generate",
 )
 
-
-# =========================================================
-# BUILD FINAL RESPONSE
-# =========================================================
-
 workflow.add_edge(
     "build_response",
     END,
 )
 
-
-# =========================================================
-# COMPILE
-# =========================================================
 
 app = workflow.compile()
