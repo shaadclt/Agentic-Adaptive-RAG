@@ -24,28 +24,51 @@ def web_search(state: GraphState) -> Dict[str, Any]:
         {"query": question}
     )
 
-    tavily_results = response.get("results", [])
+    # Tavily normally returns a dictionary containing "results".
+    # Handle unexpected response shapes defensively.
+    if isinstance(response, dict):
+        tavily_results = response.get("results", [])
+    elif isinstance(response, list):
+        tavily_results = response
+    else:
+        tavily_results = []
 
     web_documents = []
 
     for result in tavily_results:
-        content = result.get("content", "")
-        url = result.get("url", "")
-        title = result.get("title", "")
+        # Normal Tavily result: dictionary
+        if isinstance(result, dict):
+            content = result.get("content", "")
+            url = result.get("url", "")
+            title = result.get("title", "")
+
+        # Defensive handling if Tavily returns a plain string
+        elif isinstance(result, str):
+            content = result
+            url = ""
+            title = ""
+
+        else:
+            continue
 
         if not content:
             continue
 
         web_documents.append(
             Document(
-                page_content=content,
+                page_content=str(content),
                 metadata={
                     "source": "web",
-                    "url": url,
-                    "title": title,
+                    "url": str(url),
+                    "title": str(title),
                 },
             )
         )
+
+    print(
+        f"---WEB SEARCH RESULTS: "
+        f"{len(web_documents)} DOCUMENTS---"
+    )
 
     documents = [
         *existing_documents,
