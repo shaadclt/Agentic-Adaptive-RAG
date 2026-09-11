@@ -1,18 +1,12 @@
 import json
-import sys
+import time
 from pathlib import Path
-from time import perf_counter
 from typing import Any, Dict, List
-
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 
 from graph.graph import app
 
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 DATASET_FILE = (
     PROJECT_ROOT
@@ -26,6 +20,8 @@ RESULTS_FILE = (
     / "benchmark_results.json"
 )
 
+REQUEST_DELAY_SECONDS = 5
+
 
 def load_dataset() -> List[Dict[str, Any]]:
     with DATASET_FILE.open(
@@ -35,16 +31,33 @@ def load_dataset() -> List[Dict[str, Any]]:
         return json.load(file)
 
 
-def contains_expected_answer(
-    answer: str,
-    expected_terms: List[str],
-) -> bool:
-    answer_lower = answer.lower()
+def is_rate_limit_error(error: Exception) -> bool:
+    text = str(error).lower()
 
-    return all(
-        term.lower() in answer_lower
-        for term in expected_terms
+    return (
+        "rate limit" in text
+        or "rate_limit" in text
+        or "429" in text
+        or "tokens per minute" in text
+        or "tpm" in text
     )
+
+
+def run_question(question: str) -> Dict[str, Any]:
+    start = time.perf_counter()
+
+    result = app.invoke(
+        {
+            "question": question,
+            "retry_count": 0,
+        }
+    )
+
+    latency = time.perf_counter() - start
+
+    result["latency_seconds"] = latency
+
+    return result
 
 
 def evaluate_question(
@@ -53,74 +66,57 @@ def evaluate_question(
 
     question = item["question"]
 
-    expected_route = item["expected_route"]
+    expected_route = item.get(
+        "expected_route",
+        "unknown",
+    )
 
     expected_terms = item.get(
         "expected_answer_contains",
         [],
     )
 
-    start = perf_counter()
-
-    result: Dict[str, Any] = {}
-
     try:
-        result = app.invoke(
-            {
-                "question": question,
-                "retry_count": 0,
-            }
-        )
+        result = run_question(question)
 
-        latency = perf_counter() - start
+        answer = str(
+            result.get(
+                "answer",
+                result.get(
+                    "generation",
+                    "",
+                ),
+            )
+        )
 
         actual_route = result.get(
             "route",
             "unknown",
         )
 
-        grounded = result.get(
-            "grounded",
-            False,
+        routing_correct = (
+            actual_route == expected_route
         )
 
-        answers_question = result.get(
-            "answers_question",
-            False,
+        answer_lower = answer.lower()
+
+        answer_contains_expected = all(
+            str(term).lower() in answer_lower
+            for term in expected_terms
         )
 
-        retry_count = result.get(
-            "retry_count",
-            0,
-        )
-
-        answer = result.get(
-            "generation",
+        answers_question = bool(
             result.get(
-                "answer",
-                "",
-            ),
-        )
-
-        retrieved_documents = result.get(
-            "retrieved_documents",
-            0,
-        )
-
-        relevant_documents = result.get(
-            "relevant_documents",
-            0,
-        )
-
-        answer_contains_expected = (
-            contains_expected_answer(
-                answer,
-                expected_terms,
+                "answers_question",
+                False,
             )
         )
 
-        routing_correct = (
-            actual_route == expected_route
+        grounded = bool(
+            result.get(
+                "grounded",
+                False,
+            )
         )
 
         passed = (
@@ -135,49 +131,6 @@ def evaluate_question(
             "expected_route": expected_route,
             "actual_route": actual_route,
             "routing_correct": routing_correct,
-            "retrieved_documents": retrieved_documents,
-            "relevant_documents": relevant_documents,
-            "grounded": grounded,
-            "answers_question": answers_question,
-            "answer_contains_expected": (
-                answer_contains_expected
-            ),
-            "retry_count": retry_count,
-            "latency_seconds": round(
-                latency,
-                2,
-            ),
-            "answer": answer,
-            "passed": passed,
-            "error": None,
-        }
-
-    except Exception as exc:
-        latency = perf_counter() - start
-
-        retry_count = result.get(
-            "retry_count",
-            0,
-        )
-
-        actual_route = result.get(
-            "route",
-            "error",
-        )
-
-        error_message = str(exc)
-
-        rate_limited = (
-            "rate_limit_exceeded" in error_message
-            or "Rate limit" in error_message
-            or "429" in error_message
-        )
-
-        return {
-            "question": question,
-            "expected_route": expected_route,
-            "actual_route": actual_route,
-            "routing_correct": False,
             "retrieved_documents": result.get(
                 "retrieved_documents",
                 0,
@@ -186,25 +139,45 @@ def evaluate_question(
                 "relevant_documents",
                 0,
             ),
+            "grounded": grounded,
+            "answers_question": answers_question,
+            "answer_contains_expected": (
+                answer_contains_expected
+            ),
+            "retry_count": result.get(
+                "retry_count",
+                0,
+            ),
+            "latency_seconds": result.get(
+                "latency_seconds",
+                0.0,
+            ),
+            "answer": answer,
+            "passed": passed,
+            "error": None,
+        }
+
+    except Exception as exc:
+        return {
+            "question": question,
+            "expected_route": expected_route,
+            "actual_route": "error",
+            "routing_correct": False,
+            "retrieved_documents": 0,
+            "relevant_documents": 0,
             "grounded": False,
             "answers_question": False,
             "answer_contains_expected": False,
-            "retry_count": retry_count,
-            "latency_seconds": round(
-                latency,
-                2,
-            ),
-            "answer": result.get(
-                "generation",
-                "",
-            ),
+            "retry_count": 0,
+            "latency_seconds": 0.0,
+            "answer": "",
             "passed": False,
-            "error": error_message,
-            "rate_limited": rate_limited,
+            "error": str(exc),
+            "rate_limited": is_rate_limit_error(exc),
         }
 
 
-def build_summary(
+def calculate_summary(
     results: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
 
@@ -214,7 +187,7 @@ def build_summary(
         return {
             "questions_evaluated": 0,
             "successful_questions": 0,
-            "failed_questions": 0,
+            "benchmark_failures": 0,
             "errors": 0,
             "rate_limited": 0,
             "routing_accuracy": 0.0,
@@ -226,107 +199,121 @@ def build_summary(
             "overall_pass_rate": 0.0,
         }
 
-    successful_results = [
-        result
-        for result in results
-        if not result.get("error")
-    ]
-
     error_results = [
         result
         for result in results
         if result.get("error")
     ]
 
-    rate_limited_results = [
+    successful_results = [
         result
-        for result in error_results
-        if result.get("rate_limited", False)
+        for result in results
+        if not result.get("error")
     ]
+
+    local_results = [
+        result
+        for result in successful_results
+        if result.get("expected_route") == "local"
+    ]
+
+    routing_correct = sum(
+        result.get(
+            "routing_correct",
+            False,
+        )
+        for result in successful_results
+    )
+
+    grounded_count = sum(
+        result.get(
+            "grounded",
+            False,
+        )
+        for result in successful_results
+    )
+
+    answer_quality_count = sum(
+        result.get(
+            "answers_question",
+            False,
+        )
+        for result in successful_results
+    )
+
+    passed = sum(
+        result.get(
+            "passed",
+            False,
+        )
+        for result in successful_results
+    )
+
+    if local_results:
+        retrieval_rates = []
+
+        for result in local_results:
+            retrieved = result.get(
+                "retrieved_documents",
+                0,
+            )
+
+            relevant = result.get(
+                "relevant_documents",
+                0,
+            )
+
+            if retrieved:
+                retrieval_rates.append(
+                    relevant / retrieved
+                )
+
+        average_local_retrieval_rate = (
+            sum(retrieval_rates)
+            / len(retrieval_rates)
+            if retrieval_rates
+            else 0.0
+        )
+    else:
+        average_local_retrieval_rate = 0.0
+
+    total_latency = sum(
+        result.get(
+            "latency_seconds",
+            0.0,
+        )
+        for result in successful_results
+    )
+
+    total_retries = sum(
+        result.get(
+            "retry_count",
+            0,
+        )
+        for result in successful_results
+    )
 
     total_successful = len(
         successful_results
     )
 
-    routing_correct = sum(
-        result["routing_correct"]
-        for result in successful_results
-    )
-
-    grounded = sum(
-        result["grounded"]
-        for result in successful_results
-    )
-
-    answers_question = sum(
-        result["answers_question"]
-        for result in successful_results
-    )
-
-    passed = sum(
-        result["passed"]
-        for result in successful_results
-    )
-
-    # Retrieval quality should only measure questions
-    # expected to use the local knowledge base.
-    local_results = [
-        result
-        for result in successful_results
-        if result["expected_route"] == "local"
-    ]
-
-    local_retrieval_rates = []
-
-    for result in local_results:
-        retrieved = result[
-            "retrieved_documents"
-        ]
-
-        relevant = result[
-            "relevant_documents"
-        ]
-
-        if retrieved:
-            local_retrieval_rates.append(
-                relevant / retrieved
-            )
-
-    average_local_retrieval_rate = (
-        sum(local_retrieval_rates)
-        / len(local_retrieval_rates)
-        if local_retrieval_rates
-        else 0.0
-    )
-
-    average_latency = (
-        sum(
-            result["latency_seconds"]
-            for result in successful_results
-        )
-        / total_successful
-        if total_successful
-        else 0.0
-    )
-
-    average_retries = (
-        sum(
-            result["retry_count"]
-            for result in results
-        )
-        / total
-    )
-
     return {
         "questions_evaluated": total,
         "successful_questions": total_successful,
-        "failed_questions": sum(
-            not result["passed"]
+        "benchmark_failures": sum(
+            not result.get(
+                "passed",
+                False,
+            )
             for result in successful_results
         ),
         "errors": len(error_results),
-        "rate_limited": len(
-            rate_limited_results
+        "rate_limited": sum(
+            result.get(
+                "rate_limited",
+                False,
+            )
+            for result in error_results
         ),
         "routing_accuracy": (
             routing_correct / total_successful
@@ -334,12 +321,12 @@ def build_summary(
             else 0.0
         ),
         "grounded_answer_rate": (
-            grounded / total_successful
+            grounded_count / total_successful
             if total_successful
             else 0.0
         ),
         "answer_quality_rate": (
-            answers_question / total_successful
+            answer_quality_count / total_successful
             if total_successful
             else 0.0
         ),
@@ -347,10 +334,14 @@ def build_summary(
             average_local_retrieval_rate
         ),
         "average_latency_seconds": (
-            average_latency
+            total_latency / total_successful
+            if total_successful
+            else 0.0
         ),
         "average_retries": (
-            average_retries
+            total_retries / total_successful
+            if total_successful
+            else 0.0
         ),
         "overall_pass_rate": (
             passed / total_successful
@@ -358,154 +349,6 @@ def build_summary(
             else 0.0
         ),
     }
-
-
-def print_summary(
-    results: List[Dict[str, Any]],
-    summary: Dict[str, Any],
-) -> None:
-
-    print()
-    print("=" * 70)
-    print("EVALUATION BENCHMARK")
-    print("=" * 70)
-
-    for index, result in enumerate(
-        results,
-        start=1,
-    ):
-        print()
-        print(
-            f"{index}. {result['question']}"
-        )
-
-        print(
-            f"   Route: "
-            f"{result['actual_route']} "
-            f"(expected: "
-            f"{result['expected_route']})"
-        )
-
-        print(
-            f"   Routing correct: "
-            f"{result['routing_correct']}"
-        )
-
-        print(
-            f"   Retrieved documents: "
-            f"{result['retrieved_documents']}"
-        )
-
-        print(
-            f"   Relevant documents: "
-            f"{result['relevant_documents']}"
-        )
-
-        print(
-            f"   Grounded: "
-            f"{result['grounded']}"
-        )
-
-        print(
-            f"   Answers question: "
-            f"{result['answers_question']}"
-        )
-
-        print(
-            f"   Expected terms found: "
-            f"{result['answer_contains_expected']}"
-        )
-
-        print(
-            f"   Retries: "
-            f"{result['retry_count']}"
-        )
-
-        print(
-            f"   Latency: "
-            f"{result['latency_seconds']}s"
-        )
-
-        print(
-            f"   PASS: "
-            f"{result['passed']}"
-        )
-
-        if result.get("rate_limited"):
-            print(
-                "   ERROR TYPE: RATE LIMITED"
-            )
-
-        if result.get("error"):
-            print(
-                f"   ERROR: "
-                f"{result['error']}"
-            )
-
-    print()
-    print("-" * 70)
-
-    print(
-        f"Questions evaluated:          "
-        f"{summary['questions_evaluated']}"
-    )
-
-    print(
-        f"Successful questions:         "
-        f"{summary['successful_questions']}"
-    )
-
-    print(
-        f"Failed questions:             "
-        f"{summary['failed_questions']}"
-    )
-
-    print(
-        f"Errors:                       "
-        f"{summary['errors']}"
-    )
-
-    print(
-        f"Rate-limited:                 "
-        f"{summary['rate_limited']}"
-    )
-
-    print(
-        f"Routing accuracy:             "
-        f"{summary['routing_accuracy']:.1%}"
-    )
-
-    print(
-        f"Grounded answer rate:        "
-        f"{summary['grounded_answer_rate']:.1%}"
-    )
-
-    print(
-        f"Answer quality rate:         "
-        f"{summary['answer_quality_rate']:.1%}"
-    )
-
-    print(
-        f"Local retrieval relevance:   "
-        f"{summary['average_local_retrieval_rate']:.1%}"
-    )
-
-    print(
-        f"Average latency:              "
-        f"{summary['average_latency_seconds']:.2f}s"
-    )
-
-    print(
-        f"Average retries:              "
-        f"{summary['average_retries']:.2f}"
-    )
-
-    print(
-        f"Overall pass rate:            "
-        f"{summary['overall_pass_rate']:.1%}"
-    )
-
-    print("=" * 70)
 
 
 def save_results(
@@ -535,25 +378,96 @@ def save_results(
         )
 
 
-def main() -> None:
+def print_summary(
+    summary: Dict[str, Any],
+) -> None:
 
-    dataset = load_dataset()
+    print()
+    print("=" * 70)
+    print("AGENTIC ADAPTIVE RAG — BENCHMARK")
+    print("=" * 70)
 
     print(
-        f"Loaded {len(dataset)} "
-        "benchmark questions."
+        f"Questions evaluated:        "
+        f"{summary['questions_evaluated']}"
     )
+
+    print(
+        f"Successful questions:       "
+        f"{summary['successful_questions']}"
+    )
+
+    print(
+        f"Benchmark failures:         "
+        f"{summary['benchmark_failures']}"
+    )
+
+    print(
+        f"Errors:                     "
+        f"{summary['errors']}"
+    )
+
+    print(
+        f"Rate-limited:               "
+        f"{summary['rate_limited']}"
+    )
+
+    print(
+        f"Routing accuracy:           "
+        f"{summary['routing_accuracy']:.1%}"
+    )
+
+    print(
+        f"Grounded answer rate:       "
+        f"{summary['grounded_answer_rate']:.1%}"
+    )
+
+    print(
+        f"Answer quality rate:        "
+        f"{summary['answer_quality_rate']:.1%}"
+    )
+
+    print(
+        f"Local retrieval relevance:  "
+        f"{summary['average_local_retrieval_rate']:.1%}"
+    )
+
+    print(
+        f"Average latency:             "
+        f"{summary['average_latency_seconds']:.2f}s"
+    )
+
+    print(
+        f"Average retries:             "
+        f"{summary['average_retries']:.2f}"
+    )
+
+    print(
+        f"Overall pass rate:           "
+        f"{summary['overall_pass_rate']:.1%}"
+    )
+
+    print("=" * 70)
+
+
+def main() -> None:
+    dataset = load_dataset()
 
     results = []
 
-    for item in dataset:
+    print(
+        f"Running benchmark with "
+        f"{len(dataset)} questions..."
+    )
+
+    for index, item in enumerate(dataset):
+        question = item["question"]
 
         print()
-        print("=" * 70)
         print(
-            f"QUESTION: {item['question']}"
+            f"[{index + 1}/{len(dataset)}] "
+            f"{question}"
         )
-        print("=" * 70)
 
         result = evaluate_question(item)
 
@@ -561,8 +475,7 @@ def main() -> None:
 
         if result.get("error"):
             print(
-                f"ERROR evaluating question: "
-                f"{result['error']}"
+                f"ERROR: {result['error']}"
             )
         else:
             print(
@@ -571,89 +484,39 @@ def main() -> None:
             )
 
             print(
-                f"Expected route: "
+                f"Expected: "
                 f"{result['expected_route']}"
             )
 
             print(
-                f"Routing correct: "
-                f"{result['routing_correct']}"
-            )
-
-            print(
-                f"Grounded: "
-                f"{result['grounded']}"
-            )
-
-            print(
-                f"Answers question: "
-                f"{result['answers_question']}"
-            )
-
-            print(
-                f"Expected terms found: "
-                f"{result['answer_contains_expected']}"
-            )
-
-            print(
-                f"Retrieved documents: "
-                f"{result['retrieved_documents']}"
-            )
-
-            print(
-                f"Relevant documents: "
-                f"{result['relevant_documents']}"
-            )
-
-            retrieved = result[
-                "retrieved_documents"
-            ]
-
-            relevant = result[
-                "relevant_documents"
-            ]
-
-            retrieval_rate = (
-                relevant / retrieved
-                if retrieved
-                else 0.0
-            )
-
-            print(
-                f"Retrieval relevance: "
-                f"{retrieval_rate:.1%}"
-            )
-
-            print(
-                f"Retries: "
-                f"{result['retry_count']}"
+                f"Passed: "
+                f"{result['passed']}"
             )
 
             print(
                 f"Latency: "
-                f"{result['latency_seconds']}s"
+                f"{result['latency_seconds']:.2f}s"
             )
 
-            print(
-                f"PASS: "
-                f"{result['passed']}"
+        if index < len(dataset) - 1:
+            time.sleep(
+                REQUEST_DELAY_SECONDS
             )
 
-    summary = build_summary(results)
+    summary = calculate_summary(
+        results
+    )
 
     save_results(
         results,
         summary,
     )
 
-    print_summary(
-        results,
-        summary,
-    )
+    print_summary(summary)
 
     print()
     print(
-        f"Detailed results saved to: "
+        f"Results saved to: "
         f"{RESULTS_FILE}"
     )
 
