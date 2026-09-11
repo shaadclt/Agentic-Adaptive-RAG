@@ -306,3 +306,4 @@ __pycache__/
 .pytest_cache/
 evaluation/benchmark_results.json
 data/documents/benchmark_knowledge_base.md
+evaluation/ragas_results.json
