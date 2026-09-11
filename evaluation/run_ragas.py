@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ragas import EvaluationDataset, SingleTurnSample, evaluate
-from ragas.metrics.collections import (
+from ragas.metrics import (
     answer_relevancy,
     faithfulness,
 )
@@ -32,10 +32,6 @@ RESULTS_FILE = (
     / "ragas_results.json"
 )
 
-
-# Groq has an 8,000 TPM limit in the current project configuration.
-# A small delay between questions reduces the chance of hitting
-# the rolling token-per-minute limit.
 REQUEST_DELAY_SECONDS = 8
 
 
@@ -49,16 +45,11 @@ def load_benchmark() -> List[Dict[str, Any]]:
 
 def run_rag(question: str) -> Dict[str, Any]:
     """
-    Run only the core RAG pipeline required for RAGAS evaluation.
+    Run the core local RAG pipeline for evaluation.
 
-    This intentionally bypasses:
-    - LLM routing
-    - retrieval grading
-    - hallucination grading
-    - answer grading
-    - retry loop
-
-    RAGAS will evaluate faithfulness and answer relevancy separately.
+    The agentic routing and grading layers are intentionally
+    bypassed here because RAGAS evaluates the generated answer
+    against the retrieved contexts directly.
     """
 
     documents = retriever.invoke(question)
@@ -141,7 +132,6 @@ def build_samples(
                 f"ERROR evaluating question: {exc}"
             )
 
-        # Avoid immediately consuming the remaining TPM window.
         if index < len(local_items) - 1:
             print(
                 f"Waiting {REQUEST_DELAY_SECONDS}s "
