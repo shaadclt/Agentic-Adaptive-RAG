@@ -5,19 +5,27 @@ from langchain_core.documents import Document
 
 class GraphState(TypedDict, total=False):
     question: str
+
     generation: str
+
     answer: str
 
     web_search: bool
+
     route: str
 
+    router_context: str
+
     documents: List[Document]
+
     sources: List[Dict[str, Any]]
 
     retry_count: int
 
-    # Evaluation metadata
     retrieved_documents: int
+
     relevant_documents: int
+
     grounded: bool
+
     answers_question: bool
