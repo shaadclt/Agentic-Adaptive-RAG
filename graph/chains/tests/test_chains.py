@@ -1,55 +1,25 @@
-from dotenv import load_dotenv
-
-from graph.chains.answer_grader import GradeAnswer, answer_grader
-from graph.chains.hallucination_grader import (
-    GradeHallucinations,
-    hallucination_grader,
-)
-from graph.chains.retrieval_grader import GradeDocuments, retrieval_grader
+from graph.chains.answer_grader import answer_grader
+from graph.chains.hallucination_grader import hallucination_grader
+from graph.chains.retrieval_grader import retrieval_grader
 from graph.chains.router import RouteQuery, question_router
-from unittest.mock import patch
-
-
-load_dotenv()
 
 
 def test_retrieval_grader_answer_yes() -> None:
-    question = "agent memory"
+    res = retrieval_grader.invoke(
+        {
+            "question": "What is the capital of France?",
+            "document": "Paris is the capital of France.",
+        }
+    )
 
-    document = """
-    Agent memory allows an AI agent to retain information from previous
-    interactions and use that information when making future decisions.
-    """
-
-    with patch(
-        "graph.chains.tests.test_chains.retrieval_grader"
-    ) as mock_grader:
-        mock_grader.invoke.return_value = GradeDocuments(
-            binary_score="yes"
-        )
-
-        res = mock_grader.invoke(
-            {
-                "question": question,
-                "document": document,
-            }
-        )
-
-    assert res.binary_score == "yes"
+    assert res.binary_score.lower() == "yes"
 
 
 def test_retrieval_grader_answer_no() -> None:
-    question = "agent memory"
-
-    document = """
-    Pizza dough is commonly made using flour, water, yeast, salt,
-    and sometimes olive oil.
-    """
-
-    res: GradeDocuments = retrieval_grader.invoke(
+    res = retrieval_grader.invoke(
         {
-            "question": question,
-            "document": document,
+            "question": "What is the capital of France?",
+            "document": "Berlin is the capital of Germany.",
         }
     )
 
@@ -57,100 +27,83 @@ def test_retrieval_grader_answer_no() -> None:
 
 
 def test_hallucination_grader_grounded() -> None:
-    documents = [
-        """
-        Agent memory allows an agent to store information from previous
-        interactions and use it later.
-        """
-    ]
-
-    generation = """
-    Agent memory allows an agent to retain information from previous
-    interactions.
-    """
-
-    res: GradeHallucinations = hallucination_grader.invoke(
+    res = hallucination_grader.invoke(
         {
-            "documents": documents,
-            "generation": generation,
+            "documents": [
+                "LangGraph coordinates retrieval and generation."
+            ],
+            "generation": "LangGraph coordinates retrieval and generation.",
         }
     )
 
-    assert res.binary_score is True
+    assert res.binary_score.lower() == "yes"
 
 
 def test_hallucination_grader_not_grounded() -> None:
-    documents = [
-        """
-        Agent memory allows an agent to store information from previous
-        interactions.
-        """
-    ]
-
-    generation = """
-    Pizza was invented in Italy and is made using dough and tomato sauce.
-    """
-
-    res: GradeHallucinations = hallucination_grader.invoke(
+    res = hallucination_grader.invoke(
         {
-            "documents": documents,
-            "generation": generation,
+            "documents": [
+                "LangGraph coordinates retrieval and generation."
+            ],
+            "generation": "LangGraph is a database for storing images.",
         }
     )
 
-    assert res.binary_score is False
+    assert res.binary_score.lower() == "no"
 
 
 def test_answer_grader_answers_question() -> None:
-    question = "What is agent memory?"
-
-    generation = """
-    Agent memory is a mechanism that allows an agent to retain
-    information from previous interactions.
-    """
-
-    res: GradeAnswer = answer_grader.invoke(
+    res = answer_grader.invoke(
         {
-            "question": question,
-            "generation": generation,
+            "question": "What is LangGraph used for?",
+            "generation": (
+                "LangGraph is used to coordinate retrieval and generation."
+            ),
         }
     )
 
-    assert res.binary_score is True
+    assert res.binary_score.lower() == "yes"
 
 
 def test_answer_grader_does_not_answer_question() -> None:
-    question = "What is agent memory?"
-
-    generation = """
-    Pizza dough is usually made with flour, water, yeast, and salt.
-    """
-
-    res: GradeAnswer = answer_grader.invoke(
+    res = answer_grader.invoke(
         {
-            "question": question,
-            "generation": generation,
+            "question": "What is LangGraph used for?",
+            "generation": "Chroma is a vector database.",
         }
     )
 
-    assert res.binary_score is False
+    assert res.binary_score.lower() == "no"
 
 
 def test_router_to_vectorstore() -> None:
-    question = "What information is available in my uploaded documents?"
+    question = "What is LangGraph used for?"
 
     res: RouteQuery = question_router.invoke(
-        {"question": question}
+        {
+            "question": question,
+            "context": (
+                "LangGraph is used to coordinate the different steps "
+                "of the RAG workflow, including retrieval, generation, "
+                "document grading, and web search."
+            ),
+        }
     )
 
     assert res.datasource == "vectorstore"
 
 
 def test_router_to_websearch() -> None:
-    question = "How do I make pizza?"
+    question = "What is the latest news?"
 
     res: RouteQuery = question_router.invoke(
-        {"question": question}
+        {
+            "question": question,
+            "context": (
+                "The local knowledge base contains information about "
+                "the RAG project's architecture, retrieval, and generation."
+            ),
+        }
     )
 
     assert res.datasource == "websearch"
