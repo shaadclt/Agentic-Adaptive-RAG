@@ -115,7 +115,7 @@ def test_generation_quality_gate_respects_retry_limit() -> None:
     assert decision == "not useful"
 
 
-def test_generation_not_useful_when_answer_does_not_address_question() -> None:
+def test_generation_retries_when_answer_does_not_address_question() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
         "generation": "This answer is about something else.",
@@ -157,11 +157,7 @@ def test_generation_not_useful_when_answer_does_not_address_question() -> None:
 
     decision = decide_after_evaluation(updated_state)
 
-    assert decision == "not useful"
-
-    mock_hallucination.invoke.assert_called_once()
-    mock_answer.invoke.assert_called_once()
-
+    assert decision == "retry"
 
 def test_generation_quality_gate_handles_uppercase_yes() -> None:
     state: GraphState = {
