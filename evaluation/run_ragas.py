@@ -3,20 +3,19 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-
 from ragas import EvaluationDataset, SingleTurnSample, evaluate
-from ragas.metrics import (
+from ragas.metrics.collections import (
     answer_relevancy,
     faithfulness,
 )
 
 from graph.graph import app
+from model import embed_model, llm_model
 
 
 DATASET_FILE = (
@@ -33,17 +32,11 @@ RESULTS_FILE = (
 
 
 def load_benchmark() -> List[Dict[str, Any]]:
-    with DATASET_FILE.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with DATASET_FILE.open("r", encoding="utf-8") as file:
         return json.load(file)
 
 
-def run_application(
-    question: str,
-) -> Dict[str, Any]:
-
+def run_application(question: str) -> Dict[str, Any]:
     return app.invoke(
         {
             "question": question,
@@ -55,48 +48,31 @@ def run_application(
 def build_samples(
     benchmark: List[Dict[str, Any]],
 ) -> List[SingleTurnSample]:
-
-    samples = []
+    samples: List[SingleTurnSample] = []
 
     for item in benchmark:
-
         question = item["question"]
 
-        # RAGAS evaluation is focused on questions
-        # that are expected to use the local knowledge base.
+        # RAGAS is currently focused on the local RAG path.
         if item.get("expected_route") != "local":
             continue
 
         print()
-        print(
-            f"Evaluating: {question}"
-        )
+        print(f"Evaluating: {question}")
 
-        result = run_application(
-            question
-        )
+        result = run_application(question)
 
-        documents = result.get(
-            "documents",
-            [],
-        )
+        documents = result.get("documents", [])
 
         contexts = [
             document.page_content
             for document in documents
-            if getattr(
-                document,
-                "page_content",
-                "",
-            )
+            if getattr(document, "page_content", "")
         ]
 
         answer = result.get(
             "generation",
-            result.get(
-                "answer",
-                "",
-            ),
+            result.get("answer", ""),
         )
 
         sample = SingleTurnSample(
@@ -107,37 +83,20 @@ def build_samples(
 
         samples.append(sample)
 
-        print(
-            f"Route: "
-            f"{result.get('route', 'unknown')}"
-        )
-
-        print(
-            f"Retrieved contexts: "
-            f"{len(contexts)}"
-        )
-
-        print(
-            f"Retries: "
-            f"{result.get('retry_count', 0)}"
-        )
+        print(f"Route: {result.get('route', 'unknown')}")
+        print(f"Retrieved contexts: {len(contexts)}")
+        print(f"Retries: {result.get('retry_count', 0)}")
 
     return samples
 
 
-def save_results(
-    result: Any,
-) -> None:
-
+def save_results(result: Any) -> None:
     RESULTS_FILE.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    if hasattr(
-        result,
-        "to_pandas",
-    ):
+    if hasattr(result, "to_pandas"):
         dataframe = result.to_pandas()
 
         records = dataframe.to_dict(
@@ -151,15 +110,10 @@ def save_results(
                 summary[column] = float(
                     dataframe[column].mean()
                 )
-            except (
-                TypeError,
-                ValueError,
-            ):
+            except (TypeError, ValueError):
                 continue
-
     else:
         records = []
-
         summary = {}
 
     output = {
@@ -180,17 +134,14 @@ def save_results(
 
 
 def main() -> None:
-
     benchmark = load_benchmark()
 
-    samples = build_samples(
-        benchmark
-    )
+    samples = build_samples(benchmark)
 
     if not samples:
         raise RuntimeError(
-            "No local benchmark samples "
-            "were available for RAGAS evaluation."
+            "No local benchmark samples were available "
+            "for RAGAS evaluation."
         )
 
     dataset = EvaluationDataset(
@@ -202,11 +153,6 @@ def main() -> None:
     print("RAGAS EVALUATION")
     print("=" * 60)
 
-    # The existing LangChain LLM/embedding objects are
-    # intentionally reused so evaluation uses the same
-    # model configuration as the application.
-    from model import llm_model
-
     result = evaluate(
         dataset=dataset,
         metrics=[
@@ -214,19 +160,17 @@ def main() -> None:
             answer_relevancy,
         ],
         llm=llm_model,
+        embeddings=embed_model,
     )
 
     print()
     print(result)
 
-    save_results(
-        result
-    )
+    save_results(result)
 
     print()
     print(
-        f"RAGAS results saved to: "
-        f"{RESULTS_FILE}"
+        f"RAGAS results saved to: {RESULTS_FILE}"
     )
 
 
