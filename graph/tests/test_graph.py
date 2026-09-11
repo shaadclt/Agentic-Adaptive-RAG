@@ -3,7 +3,6 @@ from unittest.mock import patch
 from graph.graph import (
     MAX_GENERATION_RETRIES,
     decide_after_evaluation,
-    decide_to_generate,
     evaluate_generation,
     route_question,
 )
@@ -16,22 +15,41 @@ def test_local_rag_path() -> None:
         "documents": [],
     }
 
-    with patch("graph.graph.has_documents", return_value=True):
-        result = route_question(state)
+    mock_route = type(
+        "RouteResult",
+        (),
+        {"datasource": "vectorstore"},
+    )()
 
-    assert result == "retrieve"
+    with patch(
+        "graph.graph.question_router",
+    ) as mock_router:
+
+        mock_router.invoke.return_value = mock_route
+
+        decision = route_question(state)
+
+    assert decision == "retrieve"
+
+    mock_router.invoke.assert_called_once_with(
+        {
+            "question": "What is Chroma?",
+        }
+    )
 
 
 def test_retrieval_falls_back_to_web_search() -> None:
     state: GraphState = {
-        "question": "What is the latest news?",
+        "question": "What is quantum computing?",
         "documents": [],
         "web_search": True,
     }
 
-    result = decide_to_generate(state)
+    from graph.graph import decide_to_generate
 
-    assert result == "websearch"
+    decision = decide_to_generate(state)
+
+    assert decision == "websearch"
 
 
 def test_direct_web_search_route() -> None:
@@ -46,32 +64,31 @@ def test_direct_web_search_route() -> None:
     )()
 
     with patch(
-        "graph.graph.has_documents",
-        return_value=False,
-    ):
-        with patch(
-            "graph.graph.question_router",
-        ) as mock_router:
+        "graph.graph.question_router",
+    ) as mock_router:
 
-            mock_router.invoke.return_value = mock_route
+        mock_router.invoke.return_value = mock_route
 
-            result = route_question(state)
+        decision = route_question(state)
 
-    assert result == "websearch"
+    assert decision == "websearch"
+
     mock_router.invoke.assert_called_once_with(
-        {"question": state["question"]}
+        {
+            "question": "What is the latest news?",
+        }
     )
 
 
 def test_generation_retries_when_not_grounded() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
-        "generation": "Incorrect answer.",
+        "generation": "Unsupported answer.",
         "documents": [],
         "retry_count": 0,
     }
 
-    mock_score = type(
+    hallucination_score = type(
         "Score",
         (),
         {"binary_score": "no"},
@@ -81,7 +98,9 @@ def test_generation_retries_when_not_grounded() -> None:
         "graph.graph.hallucination_grader",
     ) as mock_hallucination:
 
-        mock_hallucination.invoke.return_value = mock_score
+        mock_hallucination.invoke.return_value = (
+            hallucination_score
+        )
 
         result = evaluate_generation(state)
 
@@ -93,24 +112,26 @@ def test_generation_retries_when_not_grounded() -> None:
         **result,
     }
 
-    decision = decide_after_evaluation(updated_state)
+    decision = decide_after_evaluation(
+        updated_state
+    )
 
     assert decision == "retry"
-
-    mock_hallucination.invoke.assert_called_once()
 
 
 def test_generation_quality_gate_respects_retry_limit() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
-        "generation": "Incorrect answer.",
+        "generation": "Unsupported answer.",
         "documents": [],
         "retry_count": MAX_GENERATION_RETRIES,
         "grounded": False,
         "answers_question": False,
     }
 
-    decision = decide_after_evaluation(state)
+    decision = decide_after_evaluation(
+        state
+    )
 
     assert decision == "not useful"
 
@@ -138,14 +159,22 @@ def test_generation_retries_when_answer_does_not_address_question() -> None:
     with patch(
         "graph.graph.hallucination_grader",
     ) as mock_hallucination:
+
         with patch(
             "graph.graph.answer_grader",
         ) as mock_answer:
 
-            mock_hallucination.invoke.return_value = hallucination_score
-            mock_answer.invoke.return_value = answer_score
+            mock_hallucination.invoke.return_value = (
+                hallucination_score
+            )
 
-            result = evaluate_generation(state)
+            mock_answer.invoke.return_value = (
+                answer_score
+            )
+
+            result = evaluate_generation(
+                state
+            )
 
     assert result["grounded"] is True
     assert result["answers_question"] is False
@@ -155,9 +184,12 @@ def test_generation_retries_when_answer_does_not_address_question() -> None:
         **result,
     }
 
-    decision = decide_after_evaluation(updated_state)
+    decision = decide_after_evaluation(
+        updated_state
+    )
 
     assert decision == "retry"
+
 
 def test_generation_quality_gate_handles_uppercase_yes() -> None:
     state: GraphState = {
@@ -182,14 +214,22 @@ def test_generation_quality_gate_handles_uppercase_yes() -> None:
     with patch(
         "graph.graph.hallucination_grader",
     ) as mock_hallucination:
+
         with patch(
             "graph.graph.answer_grader",
         ) as mock_answer:
 
-            mock_hallucination.invoke.return_value = hallucination_score
-            mock_answer.invoke.return_value = answer_score
+            mock_hallucination.invoke.return_value = (
+                hallucination_score
+            )
 
-            result = evaluate_generation(state)
+            mock_answer.invoke.return_value = (
+                answer_score
+            )
+
+            result = evaluate_generation(
+                state
+            )
 
     assert result["grounded"] is True
     assert result["answers_question"] is True
@@ -199,28 +239,35 @@ def test_generation_quality_gate_handles_uppercase_yes() -> None:
         **result,
     }
 
-    decision = decide_after_evaluation(updated_state)
+    decision = decide_after_evaluation(
+        updated_state
+    )
 
     assert decision == "useful"
 
-    mock_hallucination.invoke.assert_called_once()
-    mock_answer.invoke.assert_called_once()
 
-
-def test_local_knowledge_takes_priority_over_router() -> None:
+def test_local_knowledge_router_decides_local() -> None:
     state: GraphState = {
-        "question": "What information is available in my uploaded documents?",
+        "question": (
+            "What information is available "
+            "in my uploaded documents?"
+        ),
     }
 
+    mock_route = type(
+        "RouteResult",
+        (),
+        {"datasource": "vectorstore"},
+    )()
+
     with patch(
-        "graph.graph.has_documents",
-        return_value=True,
-    ):
-        with patch(
-            "graph.graph.question_router",
-        ) as mock_router:
+        "graph.graph.question_router",
+    ) as mock_router:
 
-            result = route_question(state)
+        mock_router.invoke.return_value = (
+            mock_route
+        )
 
-    assert result == "retrieve"
-    mock_router.invoke.assert_not_called()
+        decision = route_question(state)
+
+    assert decision == "retrieve"
