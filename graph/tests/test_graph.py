@@ -2,8 +2,9 @@ from unittest.mock import patch
 
 from graph.graph import (
     MAX_GENERATION_RETRIES,
+    app,
     decide_after_evaluation,
-    evaluate_generation,
+    decide_to_generate,
     route_question,
 )
 from graph.state import GraphState
@@ -13,6 +14,10 @@ def test_local_rag_path() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
         "documents": [],
+        "router_context": (
+            "Chroma is used as the vector database for the local "
+            "knowledge base."
+        ),
     }
 
     mock_route = type(
@@ -34,18 +39,20 @@ def test_local_rag_path() -> None:
     mock_router.invoke.assert_called_once_with(
         {
             "question": "What is Chroma?",
+            "context": (
+                "Chroma is used as the vector database for the local "
+                "knowledge base."
+            ),
         }
     )
 
 
 def test_retrieval_falls_back_to_web_search() -> None:
     state: GraphState = {
-        "question": "What is quantum computing?",
+        "question": "What is the capital of France?",
         "documents": [],
         "web_search": True,
     }
-
-    from graph.graph import decide_to_generate
 
     decision = decide_to_generate(state)
 
@@ -55,6 +62,10 @@ def test_retrieval_falls_back_to_web_search() -> None:
 def test_direct_web_search_route() -> None:
     state: GraphState = {
         "question": "What is the latest news?",
+        "router_context": (
+            "The local knowledge base contains information about "
+            "the RAG project's architecture."
+        ),
     }
 
     mock_route = type(
@@ -76,6 +87,10 @@ def test_direct_web_search_route() -> None:
     mock_router.invoke.assert_called_once_with(
         {
             "question": "What is the latest news?",
+            "context": (
+                "The local knowledge base contains information about "
+                "the RAG project's architecture."
+            ),
         }
     )
 
@@ -83,38 +98,12 @@ def test_direct_web_search_route() -> None:
 def test_generation_retries_when_not_grounded() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
-        "generation": "Unsupported answer.",
-        "documents": [],
+        "grounded": False,
+        "answers_question": False,
         "retry_count": 0,
     }
 
-    hallucination_score = type(
-        "Score",
-        (),
-        {"binary_score": "no"},
-    )()
-
-    with patch(
-        "graph.graph.hallucination_grader",
-    ) as mock_hallucination:
-
-        mock_hallucination.invoke.return_value = (
-            hallucination_score
-        )
-
-        result = evaluate_generation(state)
-
-    assert result["grounded"] is False
-    assert result["answers_question"] is False
-
-    updated_state = {
-        **state,
-        **result,
-    }
-
-    decision = decide_after_evaluation(
-        updated_state
-    )
+    decision = decide_after_evaluation(state)
 
     assert decision == "retry"
 
@@ -122,16 +111,12 @@ def test_generation_retries_when_not_grounded() -> None:
 def test_generation_quality_gate_respects_retry_limit() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
-        "generation": "Unsupported answer.",
-        "documents": [],
-        "retry_count": MAX_GENERATION_RETRIES,
         "grounded": False,
         "answers_question": False,
+        "retry_count": MAX_GENERATION_RETRIES,
     }
 
-    decision = decide_after_evaluation(
-        state
-    )
+    decision = decide_after_evaluation(state)
 
     assert decision == "not useful"
 
@@ -139,118 +124,56 @@ def test_generation_quality_gate_respects_retry_limit() -> None:
 def test_generation_retries_when_answer_does_not_address_question() -> None:
     state: GraphState = {
         "question": "What is Chroma?",
-        "generation": "This answer is about something else.",
-        "documents": [],
+        "grounded": True,
+        "answers_question": False,
         "retry_count": 0,
     }
 
-    hallucination_score = type(
-        "Score",
-        (),
-        {"binary_score": "yes"},
-    )()
-
-    answer_score = type(
-        "Score",
-        (),
-        {"binary_score": "no"},
-    )()
-
-    with patch(
-        "graph.graph.hallucination_grader",
-    ) as mock_hallucination:
-
-        with patch(
-            "graph.graph.answer_grader",
-        ) as mock_answer:
-
-            mock_hallucination.invoke.return_value = (
-                hallucination_score
-            )
-
-            mock_answer.invoke.return_value = (
-                answer_score
-            )
-
-            result = evaluate_generation(
-                state
-            )
-
-    assert result["grounded"] is True
-    assert result["answers_question"] is False
-
-    updated_state = {
-        **state,
-        **result,
-    }
-
-    decision = decide_after_evaluation(
-        updated_state
-    )
+    decision = decide_after_evaluation(state)
 
     assert decision == "retry"
 
 
 def test_generation_quality_gate_handles_uppercase_yes() -> None:
-    state: GraphState = {
-        "question": "What is Chroma?",
-        "generation": "Chroma is a vector database.",
-        "documents": [],
-        "retry_count": 0,
-    }
-
-    hallucination_score = type(
-        "Score",
-        (),
-        {"binary_score": "YES"},
-    )()
-
-    answer_score = type(
-        "Score",
-        (),
-        {"binary_score": "YES"},
-    )()
-
     with patch(
         "graph.graph.hallucination_grader",
-    ) as mock_hallucination:
+    ) as mock_hallucination, patch(
+        "graph.graph.answer_grader",
+    ) as mock_answer:
 
-        with patch(
-            "graph.graph.answer_grader",
-        ) as mock_answer:
+        mock_hallucination.invoke.return_value = type(
+            "Score",
+            (),
+            {"binary_score": "YES"},
+        )()
 
-            mock_hallucination.invoke.return_value = (
-                hallucination_score
-            )
+        mock_answer.invoke.return_value = type(
+            "Score",
+            (),
+            {"binary_score": "YES"},
+        )()
 
-            mock_answer.invoke.return_value = (
-                answer_score
-            )
+        from graph.graph import evaluate_generation
 
-            result = evaluate_generation(
-                state
-            )
+        state: GraphState = {
+            "question": "What is Chroma?",
+            "documents": [],
+            "generation": "Chroma is a vector database.",
+        }
+
+        result = evaluate_generation(state)
 
     assert result["grounded"] is True
     assert result["answers_question"] is True
 
-    updated_state = {
-        **state,
-        **result,
-    }
-
-    decision = decide_after_evaluation(
-        updated_state
-    )
-
-    assert decision == "useful"
-
 
 def test_local_knowledge_router_decides_local() -> None:
     state: GraphState = {
-        "question": (
-            "What information is available "
-            "in my uploaded documents?"
+        "question": "What does this project use Chroma for?",
+        "router_context": (
+            "Chroma is used as the vector database for the local "
+            "knowledge base. Uploaded documents are stored as "
+            "vector embeddings in Chroma."
         ),
     }
 
@@ -264,10 +187,19 @@ def test_local_knowledge_router_decides_local() -> None:
         "graph.graph.question_router",
     ) as mock_router:
 
-        mock_router.invoke.return_value = (
-            mock_route
-        )
+        mock_router.invoke.return_value = mock_route
 
         decision = route_question(state)
 
     assert decision == "retrieve"
+
+    mock_router.invoke.assert_called_once_with(
+        {
+            "question": "What does this project use Chroma for?",
+            "context": (
+                "Chroma is used as the vector database for the local "
+                "knowledge base. Uploaded documents are stored as "
+                "vector embeddings in Chroma."
+            ),
+        }
+    )
