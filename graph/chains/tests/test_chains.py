@@ -4,6 +4,13 @@ from graph.chains.retrieval_grader import retrieval_grader
 from graph.chains.router import RouteQuery, question_router
 
 
+def normalize_binary_score(score) -> str:
+    """Normalize boolean or string grader output."""
+    if isinstance(score, bool):
+        return "yes" if score else "no"
+    return str(score).strip().lower()
+
+
 def test_retrieval_grader_answer_yes() -> None:
     res = retrieval_grader.invoke(
         {
@@ -12,7 +19,7 @@ def test_retrieval_grader_answer_yes() -> None:
         }
     )
 
-    assert res.binary_score.lower() == "yes"
+    assert normalize_binary_score(res.binary_score) == "yes"
 
 
 def test_retrieval_grader_answer_no() -> None:
@@ -23,7 +30,7 @@ def test_retrieval_grader_answer_no() -> None:
         }
     )
 
-    assert res.binary_score.lower() == "no"
+    assert normalize_binary_score(res.binary_score) == "no"
 
 
 def test_hallucination_grader_grounded() -> None:
@@ -32,11 +39,13 @@ def test_hallucination_grader_grounded() -> None:
             "documents": [
                 "LangGraph coordinates retrieval and generation."
             ],
-            "generation": "LangGraph coordinates retrieval and generation.",
+            "generation": (
+                "LangGraph coordinates retrieval and generation."
+            ),
         }
     )
 
-    assert res.binary_score.lower() == "yes"
+    assert normalize_binary_score(res.binary_score) == "yes"
 
 
 def test_hallucination_grader_not_grounded() -> None:
@@ -45,11 +54,13 @@ def test_hallucination_grader_not_grounded() -> None:
             "documents": [
                 "LangGraph coordinates retrieval and generation."
             ],
-            "generation": "LangGraph is a database for storing images.",
+            "generation": (
+                "LangGraph is a database for storing images."
+            ),
         }
     )
 
-    assert res.binary_score.lower() == "no"
+    assert normalize_binary_score(res.binary_score) == "no"
 
 
 def test_answer_grader_answers_question() -> None:
@@ -62,7 +73,7 @@ def test_answer_grader_answers_question() -> None:
         }
     )
 
-    assert res.binary_score.lower() == "yes"
+    assert normalize_binary_score(res.binary_score) == "yes"
 
 
 def test_answer_grader_does_not_answer_question() -> None:
@@ -73,7 +84,7 @@ def test_answer_grader_does_not_answer_question() -> None:
         }
     )
 
-    assert res.binary_score.lower() == "no"
+    assert normalize_binary_score(res.binary_score) == "no"
 
 
 def test_router_to_vectorstore() -> None:
