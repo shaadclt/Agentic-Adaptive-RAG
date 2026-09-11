@@ -15,8 +15,6 @@ from graph.nodes.web_search import web_search
 
 from graph.state import GraphState
 
-from retrieval import has_documents
-
 
 MAX_GENERATION_RETRIES = 2
 
@@ -29,14 +27,16 @@ def normalize_binary_score(score: Any) -> str:
 
 
 def route_question(state: GraphState) -> str:
+    """
+    Route the question to either local retrieval or web search.
+
+    The LLM router makes the initial routing decision regardless
+    of whether the local knowledge base is populated.
+
+    Local retrieval still has a web-search fallback when the
+    retrieved documents are not relevant.
+    """
     print("---ROUTE QUESTION---")
-
-    if has_documents():
-        print("---LOCAL KNOWLEDGE BASE AVAILABLE---")
-        print("---ROUTE QUESTION TO RAG---")
-        return "retrieve"
-
-    print("---NO LOCAL KNOWLEDGE BASE---")
 
     question = state["question"]
 
@@ -45,11 +45,10 @@ def route_question(state: GraphState) -> str:
     )
 
     if route.datasource == "websearch":
-        print("---ROUTE QUESTION TO WEB SEARCH---")
+        print("---ROUTER DECISION: WEB SEARCH---")
         return "websearch"
 
-    print("---ROUTE QUESTION TO RAG---")
-
+    print("---ROUTER DECISION: LOCAL RAG---")
     return "retrieve"
 
 
@@ -179,12 +178,9 @@ def decide_after_evaluation(state: GraphState) -> str:
         0,
     )
 
-    # Successful answer.
     if grounded and answers_question:
         return "useful"
 
-    # Any failed evaluation can receive a bounded
-    # generation retry.
     if retry_count < MAX_GENERATION_RETRIES:
         print(
             f"---RETRY GENERATION "
@@ -193,7 +189,6 @@ def decide_after_evaluation(state: GraphState) -> str:
 
         return "retry"
 
-    # Never loop indefinitely.
     print(
         "---DECISION: MAXIMUM RETRIES REACHED, "
         "RETURN BEST AVAILABLE ANSWER---"
