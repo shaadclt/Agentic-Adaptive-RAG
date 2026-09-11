@@ -1,12 +1,22 @@
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List
 
-from graph.graph import app
 
+# ---------------------------------------------------------------------
+# Make the project root importable when this file is executed directly.
+# ---------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+from graph.graph import app
+
 
 DATASET_FILE = (
     PROJECT_ROOT
@@ -24,10 +34,7 @@ REQUEST_DELAY_SECONDS = 5
 
 
 def load_dataset() -> List[Dict[str, Any]]:
-    with DATASET_FILE.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with DATASET_FILE.open("r", encoding="utf-8") as file:
         return json.load(file)
 
 
@@ -60,10 +67,7 @@ def run_question(question: str) -> Dict[str, Any]:
     return result
 
 
-def evaluate_question(
-    item: Dict[str, Any],
-) -> Dict[str, Any]:
-
+def evaluate_question(item: Dict[str, Any]) -> Dict[str, Any]:
     question = item["question"]
 
     expected_route = item.get(
@@ -82,10 +86,7 @@ def evaluate_question(
         answer = str(
             result.get(
                 "answer",
-                result.get(
-                    "generation",
-                    "",
-                ),
+                result.get("generation", ""),
             )
         )
 
@@ -141,9 +142,7 @@ def evaluate_question(
             ),
             "grounded": grounded,
             "answers_question": answers_question,
-            "answer_contains_expected": (
-                answer_contains_expected
-            ),
+            "answer_contains_expected": answer_contains_expected,
             "retry_count": result.get(
                 "retry_count",
                 0,
@@ -250,9 +249,11 @@ def calculate_summary(
     )
 
     if local_results:
+
         retrieval_rates = []
 
         for result in local_results:
+
             retrieved = result.get(
                 "retrieved_documents",
                 0,
@@ -274,6 +275,7 @@ def calculate_summary(
             if retrieval_rates
             else 0.0
         )
+
     else:
         average_local_retrieval_rate = 0.0
 
@@ -300,6 +302,7 @@ def calculate_summary(
     return {
         "questions_evaluated": total,
         "successful_questions": total_successful,
+
         "benchmark_failures": sum(
             not result.get(
                 "passed",
@@ -307,7 +310,9 @@ def calculate_summary(
             )
             for result in successful_results
         ),
+
         "errors": len(error_results),
+
         "rate_limited": sum(
             result.get(
                 "rate_limited",
@@ -315,34 +320,41 @@ def calculate_summary(
             )
             for result in error_results
         ),
+
         "routing_accuracy": (
             routing_correct / total_successful
             if total_successful
             else 0.0
         ),
+
         "grounded_answer_rate": (
             grounded_count / total_successful
             if total_successful
             else 0.0
         ),
+
         "answer_quality_rate": (
             answer_quality_count / total_successful
             if total_successful
             else 0.0
         ),
+
         "average_local_retrieval_rate": (
             average_local_retrieval_rate
         ),
+
         "average_latency_seconds": (
             total_latency / total_successful
             if total_successful
             else 0.0
         ),
+
         "average_retries": (
             total_retries / total_successful
             if total_successful
             else 0.0
         ),
+
         "overall_pass_rate": (
             passed / total_successful
             if total_successful
@@ -370,6 +382,7 @@ def save_results(
         "w",
         encoding="utf-8",
     ) as file:
+
         json.dump(
             output,
             file,
@@ -451,6 +464,7 @@ def print_summary(
 
 
 def main() -> None:
+
     dataset = load_dataset()
 
     results = []
@@ -461,6 +475,7 @@ def main() -> None:
     )
 
     for index, item in enumerate(dataset):
+
         question = item["question"]
 
         print()
@@ -474,13 +489,15 @@ def main() -> None:
         results.append(result)
 
         if result.get("error"):
+
             print(
                 f"ERROR: {result['error']}"
             )
+
         else:
+
             print(
-                f"Route: "
-                f"{result['actual_route']}"
+                f"Route: {result['actual_route']}"
             )
 
             print(
@@ -514,7 +531,6 @@ def main() -> None:
 
     print_summary(summary)
 
-    print()
     print(
         f"Results saved to: "
         f"{RESULTS_FILE}"
