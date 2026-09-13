@@ -5,18 +5,16 @@ from langchain_core.documents import Document
 
 class GraphState(TypedDict, total=False):
     question: str
+
     generation: str
     answer: str
 
     web_search: bool
-    route: str
 
+    route: str
     router_context: str
 
-    # Documents retrieved before routing.
     candidate_documents: List[Document]
-
-    # Documents used by the generation pipeline.
     documents: List[Document]
 
     sources: List[Dict[str, Any]]
