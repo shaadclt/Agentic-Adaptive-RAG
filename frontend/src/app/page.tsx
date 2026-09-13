@@ -225,6 +225,8 @@ export default function Home() {
       }
 
       setResponse(data);
+      setSubmittedQuestion(trimmedQuestion);
+      setQuestion("");
     } catch (err) {
       setError(
         err instanceof Error
@@ -528,16 +530,29 @@ export default function Home() {
                   />
                 </div>
 
-                {/* Answer */}
-                <div className="mt-6">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Answer
-                  </h3>
+                {/* Question */}
+                  {submittedQuestion && (
+                    <div className="mt-6">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        Question
+                      </h3>
 
-                  <div className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-5 leading-7 text-slate-200">
-                    {response.answer}
+                      <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950 px-5 py-4 text-base font-medium text-slate-200">
+                        {submittedQuestion}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Answer */}
+                  <div className="mt-5">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Answer
+                    </h3>
+
+                    <div className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-5 leading-7 text-slate-200">
+                      {response.answer}
+                    </div>
                   </div>
-                </div>
 
                 {/* Metrics */}
                 <div className="mt-6">
