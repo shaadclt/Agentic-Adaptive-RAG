@@ -14,6 +14,8 @@ from ingestion import (
     list_documents,
 )
 
+from observability import RunObserver
+
 from sources import extract_sources
 
 
@@ -65,16 +67,21 @@ def add_documents() -> None:
         path = Path(file_path)
 
         if not path.exists():
-            print(f"---FILE NOT FOUND: {file_path}---")
+            print(
+                f"---FILE NOT FOUND: {file_path}---"
+            )
             continue
 
         if not path.is_file():
-            print(f"---NOT A FILE: {file_path}---")
+            print(
+                f"---NOT A FILE: {file_path}---"
+            )
             continue
 
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             print(
-                f"---UNSUPPORTED FILE TYPE: {path.name}---"
+                f"---UNSUPPORTED FILE TYPE: "
+                f"{path.name}---"
             )
             continue
 
@@ -99,7 +106,9 @@ def view_knowledge_base() -> None:
     documents = list_documents()
 
     if not documents:
-        print("---KNOWLEDGE BASE IS EMPTY---")
+        print(
+            "---KNOWLEDGE BASE IS EMPTY---"
+        )
         return
 
     print(
@@ -117,18 +126,22 @@ def view_knowledge_base() -> None:
             f"[{index}] "
             f"{document['file_name']}"
         )
+
         print(
             f"    Type: "
             f"{document['file_type']}"
         )
+
         print(
             f"    ID: "
             f"{document['document_id']}"
         )
+
         print(
             f"    Source: "
             f"{document['source']}"
         )
+
         print()
 
 
@@ -139,7 +152,9 @@ def remove_document() -> None:
     documents = list_documents()
 
     if not documents:
-        print("---KNOWLEDGE BASE IS EMPTY---")
+        print(
+            "---KNOWLEDGE BASE IS EMPTY---"
+        )
         return
 
     for index, document in enumerate(
@@ -164,13 +179,16 @@ def remove_document() -> None:
     index = int(choice)
 
     if index < 1 or index > len(documents):
-        print("---INVALID DOCUMENT NUMBER---")
+        print(
+            "---INVALID DOCUMENT NUMBER---"
+        )
         return
 
     document = documents[index - 1]
 
     confirm = input(
-        f"Remove '{document['file_name']}'? [y/N]: "
+        f"Remove "
+        f"'{document['file_name']}'? [y/N]: "
     ).strip().lower()
 
     if confirm != "y":
@@ -187,15 +205,20 @@ def remove_document() -> None:
             f"{document['file_name']}---"
         )
     else:
-        print("---DOCUMENT NOT FOUND---")
+        print(
+            "---DOCUMENT NOT FOUND---"
+        )
 
 
 def display_sources(
     sources: list[dict],
 ) -> None:
+
     if not sources:
         print()
-        print("---NO SOURCES AVAILABLE---")
+        print(
+            "---NO SOURCES AVAILABLE---"
+        )
         return
 
     print()
@@ -222,6 +245,7 @@ def display_sources(
         displayed_files = set()
 
         for source in local_sources:
+
             file_name = source.get(
                 "file_name",
                 "Unknown document",
@@ -230,9 +254,13 @@ def display_sources(
             if file_name in displayed_files:
                 continue
 
-            displayed_files.add(file_name)
+            displayed_files.add(
+                file_name
+            )
 
-            print(f"- {file_name}")
+            print(
+                f"- {file_name}"
+            )
 
     if web_sources:
         print()
@@ -241,6 +269,7 @@ def display_sources(
         displayed_urls = set()
 
         for source in web_sources:
+
             title = source.get(
                 "title",
                 "Web source",
@@ -256,10 +285,14 @@ def display_sources(
 
             displayed_urls.add(url)
 
-            print(f"- {title}")
+            print(
+                f"- {title}"
+            )
 
             if url:
-                print(f"  {url}")
+                print(
+                    f"  {url}"
+                )
 
 
 def ask_question() -> None:
@@ -271,22 +304,55 @@ def ask_question() -> None:
     ).strip()
 
     if not question:
-        print("---QUESTION CANNOT BE EMPTY---")
+        print(
+            "---QUESTION CANNOT BE EMPTY---"
+        )
         return
 
     print()
-    print("---PROCESSING QUESTION---")
+    print(
+        "---PROCESSING QUESTION---"
+    )
+
+    observer = RunObserver(
+        question=question
+    )
 
     start_time = perf_counter()
 
-    result = app.invoke(
-        {
-            "question": question,
-            "retry_count": 0,
-        }
-    )
+    try:
 
-    latency = perf_counter() - start_time
+        result = app.invoke(
+            {
+                "question": question,
+                "retry_count": 0,
+            }
+        )
+
+        latency = (
+            perf_counter()
+            - start_time
+        )
+
+        # Persist operational observability.
+        observer.finish(
+            result
+        )
+
+    except Exception as exc:
+
+        # Persist failed execution.
+        observer.fail(
+            exc
+        )
+
+        print()
+        print(
+            f"---RAG EXECUTION ERROR: "
+            f"{exc}---"
+        )
+
+        return
 
     answer = result.get(
         "answer",
@@ -296,11 +362,16 @@ def ask_question() -> None:
         ),
     )
 
-    sources = result.get("sources")
+    sources = result.get(
+        "sources"
+    )
 
     if sources is None:
         sources = extract_sources(
-            result.get("documents", [])
+            result.get(
+                "documents",
+                [],
+            )
         )
 
     route = result.get(
@@ -337,10 +408,16 @@ def ask_question() -> None:
         question=question,
         answer=answer,
         route=route,
-        retrieved_documents=retrieved_documents,
-        relevant_documents=relevant_documents,
+        retrieved_documents=(
+            retrieved_documents
+        ),
+        relevant_documents=(
+            relevant_documents
+        ),
         grounded=grounded,
-        answers_question=answers_question,
+        answers_question=(
+            answers_question
+        ),
         retry_count=retry_count,
         latency_seconds=latency,
         sources=sources,
@@ -356,20 +433,27 @@ def ask_question() -> None:
     print("=" * 60)
     print(answer)
 
-    display_sources(sources)
+    display_sources(
+        sources
+    )
 
     print()
-    print(f"Route: {route}")
+    print(
+        f"Route: {route}"
+    )
+
     print(
         f"Generation retries: "
         f"{retry_count}"
     )
+
     print(
         f"Latency: "
         f"{latency:.2f} seconds"
     )
 
     if retrieved_documents:
+
         print(
             f"Retrieved documents: "
             f"{retrieved_documents}"
@@ -399,15 +483,23 @@ def view_evaluation() -> None:
     print("RAG EVALUATION")
     print("=" * 60)
 
-    summary = evaluation_tracker.summary()
+    summary = (
+        evaluation_tracker.summary()
+    )
 
     if summary["total_questions"] == 0:
+
         print()
-        print("---NO QUESTIONS EVALUATED YET---")
+        print(
+            "---NO QUESTIONS "
+            "EVALUATED YET---"
+        )
+
         print("=" * 60)
         return
 
     print()
+
     print(
         f"Total questions: "
         f"{summary['total_questions']}"
@@ -440,11 +532,18 @@ def view_evaluation() -> None:
         "evaluation_history.jsonl"
     )
 
+    print(
+        "Observability history: "
+        "observability_history.jsonl"
+    )
+
     print("=" * 60)
 
 
 def main() -> None:
+
     while True:
+
         print_menu()
 
         choice = input(
@@ -452,26 +551,38 @@ def main() -> None:
         ).strip()
 
         if choice == "1":
+
             add_documents()
 
         elif choice == "2":
+
             view_knowledge_base()
 
         elif choice == "3":
+
             remove_document()
 
         elif choice == "4":
+
             ask_question()
 
         elif choice == "5":
+
             view_evaluation()
 
         elif choice == "6":
-            print("---GOODBYE---")
+
+            print(
+                "---GOODBYE---"
+            )
+
             break
 
         else:
-            print("---INVALID OPTION---")
+
+            print(
+                "---INVALID OPTION---"
+            )
 
 
 if __name__ == "__main__":
