@@ -221,6 +221,14 @@ export default function Home() {
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-7xl px-6 py-10">
         <header className="mb-10">
+        <div className="mb-6 flex justify-end">
+            <a
+              href="/observability"
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+            >
+              View Observability →
+            </a>
+        </div>
           <div className="mb-3 inline-flex rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-300">
             Agentic AI • Adaptive RAG
           </div>
