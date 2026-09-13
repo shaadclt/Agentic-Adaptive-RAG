@@ -1,6 +1,11 @@
 "use client";
 
-import { ChangeEvent, useEffect, useState } from "react";
+import {
+  ChangeEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -41,7 +46,9 @@ export default function Home() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [question, setQuestion] = useState("");
+  const [submittedQuestion, setSubmittedQuestion] = useState("");
   const [response, setResponse] = useState<ChatResponse | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -132,6 +139,9 @@ export default function Home() {
 
       setSelectedFiles([]);
 
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+        }
       await loadDocuments();
     } catch (err) {
       setError(
@@ -291,6 +301,7 @@ export default function Home() {
               <div className="mt-5 rounded-xl border border-dashed border-slate-700 p-4">
 
                 <input
+                  ref={fileInputRef}
                   type="file"
                   multiple
                   accept=".pdf,.docx,.txt,.md"
