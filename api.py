@@ -1,6 +1,9 @@
+from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from evaluation import EvaluationResult, EvaluationTracker
@@ -10,9 +13,12 @@ from ingestion import (
     delete_document,
     list_documents,
 )
-from observability import RunObserver
+from observability import (
+    RunObserver,
+    load_observations,
+    summarize_observations,
+)
 from sources import extract_sources
-from fastapi.middleware.cors import CORSMiddleware
 
 
 api = FastAPI(
@@ -23,6 +29,7 @@ api = FastAPI(
     ),
     version="1.0.0",
 )
+
 
 api.add_middleware(
     CORSMiddleware,
@@ -79,9 +86,7 @@ class DocumentResponse(BaseModel):
     source: str
 
 
-@api.get(
-    "/health",
-)
+@api.get("/health")
 def health() -> Dict[str, str]:
     return {
         "status": "healthy",
@@ -97,9 +102,7 @@ def get_documents() -> List[Dict[str, Any]]:
     return list_documents()
 
 
-@api.post(
-    "/documents/upload",
-)
+@api.post("/documents/upload")
 async def upload_documents(
     files: List[UploadFile] = File(...),
 ) -> Dict[str, Any]:
@@ -111,16 +114,9 @@ async def upload_documents(
         ".md",
     }
 
-    upload_directory = (
-        "uploads"
-    )
+    upload_directory = "uploads"
 
-    from pathlib import Path
-
-    upload_path = Path(
-        upload_directory
-    )
-
+    upload_path = Path(upload_directory)
     upload_path.mkdir(
         parents=True,
         exist_ok=True,
@@ -148,9 +144,7 @@ async def upload_documents(
             rejected_files.append(
                 {
                     "file_name": file.filename,
-                    "reason": (
-                        "Unsupported file type."
-                    ),
+                    "reason": "Unsupported file type.",
                 }
             )
             continue
@@ -162,9 +156,7 @@ async def upload_documents(
 
         content = await file.read()
 
-        destination.write_bytes(
-            content
-        )
+        destination.write_bytes(content)
 
         saved_files.append(
             str(destination)
@@ -175,28 +167,20 @@ async def upload_documents(
             status_code=400,
             detail={
                 "message": (
-                    "No supported files "
-                    "were uploaded."
+                    "No supported files were uploaded."
                 ),
-                "rejected_files": (
-                    rejected_files
-                ),
+                "rejected_files": rejected_files,
             },
         )
 
     try:
-
-        build_vectorstore(
-            saved_files
-        )
+        build_vectorstore(saved_files)
 
     except Exception as exc:
-
         raise HTTPException(
             status_code=500,
             detail=(
-                f"Document ingestion failed: "
-                f"{exc}"
+                f"Document ingestion failed: {exc}"
             ),
         ) from exc
 
@@ -212,9 +196,7 @@ async def upload_documents(
     }
 
 
-@api.delete(
-    "/documents/{document_id}",
-)
+@api.delete("/documents/{document_id}")
 def remove_document(
     document_id: str,
 ) -> Dict[str, Any]:
@@ -226,9 +208,7 @@ def remove_document(
     if not deleted:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Document not found."
-            ),
+            detail="Document not found.",
         )
 
     return {
@@ -252,18 +232,14 @@ def chat(
     if not question:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Question cannot be empty."
-            ),
+            detail="Question cannot be empty.",
         )
 
     observer = RunObserver(
         question=question
     )
 
-    import time
-
-    start_time = time.perf_counter()
+    start_time = perf_counter()
 
     try:
 
@@ -275,25 +251,19 @@ def chat(
         )
 
         latency = (
-            time.perf_counter()
-            - start_time
+            perf_counter() - start_time
         )
 
-        observer.finish(
-            result
-        )
+        observer.finish(result)
 
     except Exception as exc:
 
-        observer.fail(
-            exc
-        )
+        observer.fail(exc)
 
         raise HTTPException(
             status_code=500,
             detail=(
-                f"RAG execution failed: "
-                f"{exc}"
+                f"RAG execution failed: {exc}"
             ),
         ) from exc
 
@@ -305,12 +275,9 @@ def chat(
         ),
     )
 
-    sources = result.get(
-        "sources"
-    )
+    sources = result.get("sources")
 
     if sources is None:
-
         sources = extract_sources(
             result.get(
                 "documents",
@@ -352,16 +319,10 @@ def chat(
         question=question,
         answer=answer,
         route=route,
-        retrieved_documents=(
-            retrieved_documents
-        ),
-        relevant_documents=(
-            relevant_documents
-        ),
+        retrieved_documents=retrieved_documents,
+        relevant_documents=relevant_documents,
         grounded=grounded,
-        answers_question=(
-            answers_question
-        ),
+        answers_question=answers_question,
         retry_count=retry_count,
         latency_seconds=latency,
         sources=sources,
@@ -372,16 +333,10 @@ def chat(
     )
 
     metrics = MetricsResponse(
-        retrieved_documents=(
-            retrieved_documents
-        ),
-        relevant_documents=(
-            relevant_documents
-        ),
+        retrieved_documents=retrieved_documents,
+        relevant_documents=relevant_documents,
         grounded=grounded,
-        answers_question=(
-            answers_question
-        ),
+        answers_question=answers_question,
         retry_count=retry_count,
         latency_seconds=round(
             latency,
@@ -393,24 +348,52 @@ def chat(
         answer=answer,
         route=route,
         sources=[
-            SourceResponse(
-                **source
-            )
+            SourceResponse(**source)
             for source in sources
         ],
         metrics=metrics,
     )
 
 
-@api.get(
-    "/observability",
-)
+@api.get("/observability")
 def get_observability() -> Dict[str, Any]:
-
-    summary = (
-        evaluation_tracker.summary()
-    )
+    observations = load_observations()
 
     return {
-        "evaluation": summary,
+        "summary": summarize_observations(
+            observations
+        ),
+        "total_records": len(observations),
+    }
+
+
+@api.get("/observability/summary")
+def get_observability_summary() -> Dict[str, Any]:
+    observations = load_observations()
+
+    return summarize_observations(
+        observations
+    )
+
+
+@api.get("/observability/runs")
+def get_observability_runs(
+    limit: int = 50,
+) -> Dict[str, Any]:
+
+    if limit < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Limit must be at least 1.",
+        )
+
+    observations = load_observations()
+
+    recent = observations[-limit:]
+
+    recent.reverse()
+
+    return {
+        "runs": recent,
+        "count": len(recent),
     }
