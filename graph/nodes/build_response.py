@@ -4,28 +4,44 @@ from graph.state import GraphState
 from sources import extract_sources
 
 
-def build_response(state: GraphState) -> Dict[str, Any]:
-    """
-    Build the final structured response from the graph state.
-    """
+def build_response(
+    state: GraphState,
+) -> Dict[str, Any]:
     print("---BUILD RESPONSE---")
 
-    documents = state.get("documents", [])
-    sources = extract_sources(documents)
+    documents = state.get(
+        "documents",
+        [],
+    )
 
-    # Preserve the route already stored in the graph state.
-    route = state.get("route", "unknown")
+    sources = extract_sources(
+        documents
+    )
 
-    # If no route was explicitly stored, infer it from sources.
+    route = state.get(
+        "route",
+        "unknown",
+    )
+
     if route == "unknown":
         route = (
             "web"
-            if any(source.get("type") == "web" for source in sources)
+            if any(
+                source.get("type") == "web"
+                for source in sources
+            )
             else "local"
         )
 
-    answer = state.get("generation", "")
-    retry_count = state.get("retry_count", 0)
+    answer = state.get(
+        "generation",
+        "",
+    )
+
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
 
     return {
         "answer": answer,
@@ -33,4 +49,25 @@ def build_response(state: GraphState) -> Dict[str, Any]:
         "sources": sources,
         "route": route,
         "retry_count": retry_count,
+
+        # Observability fields
+        "retrieved_documents": state.get(
+            "retrieved_documents",
+            len(documents),
+        ),
+
+        "relevant_documents": state.get(
+            "relevant_documents",
+            0,
+        ),
+
+        "grounded": state.get(
+            "grounded",
+            False,
+        ),
+
+        "answers_question": state.get(
+            "answers_question",
+            False,
+        ),
     }
