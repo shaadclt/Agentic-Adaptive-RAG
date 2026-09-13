@@ -14,6 +14,7 @@ from ingestion import (
     list_documents,
 )
 from observability import (
+    OBSERVABILITY_FILE,
     RunObserver,
     load_observations,
     summarize_observations,
@@ -396,4 +397,21 @@ def get_observability_runs(
     return {
         "runs": recent,
         "count": len(recent),
+    }
+
+@api.delete("/observability")
+def clear_observability() -> Dict[str, Any]:
+    """
+    Clear all observability history.
+
+    This only removes observability telemetry and does not
+    affect documents, the vector database, or evaluation history.
+    """
+
+    if OBSERVABILITY_FILE.exists():
+        OBSERVABILITY_FILE.unlink()
+
+    return {
+        "message": "Observability history cleared successfully.",
+        "deleted_records": True,
     }
