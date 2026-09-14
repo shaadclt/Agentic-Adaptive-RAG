@@ -13,9 +13,16 @@ from graph.nodes.grade_documents import grade_documents
 from graph.nodes.increment_retry import increment_retry
 from graph.nodes.retrieve import retrieve
 from graph.nodes.web_search import web_search
+from graph.nodes.web_search_approval import (
+    request_web_search_approval,
+)
+from graph.nodes.web_search_rejected import (
+    web_search_rejected,
+)
 
 from graph.state import GraphState
 from retrieval import retriever
+
 
 
 MAX_GENERATION_RETRIES = 2
@@ -290,6 +297,15 @@ def decide_after_evaluation(
     return "not useful"
 
 
+def decide_web_search_approval(
+    state: GraphState,
+) -> str:
+    if state.get("web_search_approved", False):
+        return "approved"
+
+    return "rejected"
+
+
 workflow = StateGraph(
     GraphState
 )
@@ -313,6 +329,16 @@ workflow.add_node(
 workflow.add_node(
     "websearch",
     web_search,
+)
+
+workflow.add_node(
+    "web_search_approval",
+    request_web_search_approval,
+)
+
+workflow.add_node(
+    "web_search_rejected",
+    web_search_rejected,
 )
 
 workflow.add_node(
@@ -361,6 +387,20 @@ workflow.add_conditional_edges(
     },
 )
 
+workflow.add_conditional_edges(
+    "web_search_approval",
+    decide_web_search_approval,
+    {
+        "approved": "websearch",
+        "rejected": "web_search_rejected",
+    },
+)
+
+workflow.add_edge(
+    "web_search_rejected",
+    END,
+)
+
 
 workflow.add_edge(
     "mark_local_route",
@@ -385,7 +425,7 @@ workflow.add_conditional_edges(
 
 workflow.add_edge(
     "mark_web_route",
-    "websearch",
+    "web_search_approval",
 )
 
 workflow.add_edge(
