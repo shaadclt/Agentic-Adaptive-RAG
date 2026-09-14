@@ -22,7 +22,7 @@ from graph.nodes.web_search_rejected import (
 
 from graph.state import GraphState
 from retrieval import retriever
-
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 MAX_GENERATION_RETRIES = 2
@@ -463,4 +463,8 @@ workflow.add_edge(
 )
 
 
-app = workflow.compile()
+checkpointer = InMemorySaver()
+
+app = workflow.compile(
+    checkpointer=checkpointer,
+)
