@@ -48,6 +48,12 @@ export default function ObservabilityPage() {
   const [error, setError] =
     useState("");
 
+  const [showClearConfirmation, setShowClearConfirmation] =
+    useState(false);
+
+  const [clearing, setClearing] =
+    useState(false);
+
   async function loadData() {
     setLoading(true);
     setError("");
@@ -96,6 +102,42 @@ export default function ObservabilityPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  async function clearHistory() {
+    setClearing(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/observability`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Failed to clear observability history."
+        );
+      }
+
+      setShowClearConfirmation(false);
+
+      await loadData();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to clear observability history."
+      );
+    } finally {
+      setClearing(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -193,24 +235,39 @@ export default function ObservabilityPage() {
 
             <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-6">
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">
-                    Recent Runs
-                  </h2>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <div>
+    <h2 className="text-xl font-semibold">
+      Recent Runs
+    </h2>
 
-                  <p className="mt-1 text-sm text-slate-500">
-                    Latest Agentic RAG executions.
-                  </p>
-                </div>
+    <p className="mt-1 text-sm text-slate-500">
+      Latest Agentic RAG executions.
+    </p>
+  </div>
 
-                <button
-                  onClick={loadData}
-                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
-                >
-                  Refresh
-                </button>
-              </div>
+  <div className="flex gap-2">
+    <button
+      onClick={loadData}
+      disabled={loading || clearing}
+      className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      Refresh
+    </button>
+
+    <button
+      onClick={() => setShowClearConfirmation(true)}
+      disabled={
+        loading ||
+        clearing ||
+        runs.length === 0
+      }
+      className="rounded-lg border border-red-900 px-3 py-2 text-sm text-red-400 hover:bg-red-950 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      Clear History
+    </button>
+  </div>
+</div>
 
               <div className="mt-6 overflow-x-auto">
                 <table className="w-full min-w-[1000px] text-left text-sm">
@@ -343,6 +400,46 @@ export default function ObservabilityPage() {
             </section>
           </>
         )}
+        {showClearConfirmation && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+    <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+
+      <h2 className="text-xl font-semibold text-slate-100">
+        Clear observability history?
+      </h2>
+
+      <p className="mt-3 text-sm leading-6 text-slate-400">
+        This will permanently remove all recorded RAG
+        execution history. Your documents, vector database,
+        and evaluation history will not be affected.
+      </p>
+
+      <div className="mt-6 flex justify-end gap-3">
+
+        <button
+          onClick={() =>
+            setShowClearConfirmation(false)
+          }
+          disabled={clearing}
+          className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={clearHistory}
+          disabled={clearing}
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {clearing
+            ? "Clearing..."
+            : "Clear History"}
+        </button>
+
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </main>
   );
