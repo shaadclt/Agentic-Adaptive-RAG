@@ -3,24 +3,38 @@ from time import perf_counter
 from typing import Any, Dict, List
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+)
+from fastapi.middleware.cors import (
+    CORSMiddleware,
+)
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from evaluation import EvaluationResult, EvaluationTracker
+from evaluation import (
+    EvaluationResult,
+    EvaluationTracker,
+)
+
 from graph.graph import app
+
 from ingestion import (
     build_vectorstore,
     delete_document,
     list_documents,
 )
+
 from observability import (
     OBSERVABILITY_FILE,
     RunObserver,
     load_observations,
     summarize_observations,
 )
+
 from sources import extract_sources
 
 
@@ -58,14 +72,16 @@ evaluation_tracker = EvaluationTracker()
 
 
 # ---------------------------------------------------------------------------
-# Request / Response Models
+# Models
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
     question: str = Field(
         ...,
         min_length=1,
-        description="Question to ask the RAG agent.",
+        description=(
+            "Question to ask the RAG agent."
+        ),
     )
 
 
@@ -102,8 +118,11 @@ class ChatResponse(BaseModel):
     thread_id: str = ""
 
     approval_required: bool = False
+
     approval_type: str = ""
+
     approval_title: str = ""
+
     approval_message: str = ""
 
 
@@ -124,6 +143,7 @@ class DocumentResponse(BaseModel):
 
 @api.get("/health")
 def health() -> Dict[str, str]:
+
     return {
         "status": "healthy",
         "service": "agentic-adaptive-rag",
@@ -139,6 +159,7 @@ def health() -> Dict[str, str]:
     response_model=List[DocumentResponse],
 )
 def get_documents() -> List[Dict[str, Any]]:
+
     return list_documents()
 
 
@@ -154,26 +175,34 @@ async def upload_documents(
         ".md",
     }
 
-    upload_directory = "uploads"
+    upload_path = Path(
+        "uploads"
+    )
 
-    upload_path = Path(upload_directory)
     upload_path.mkdir(
         parents=True,
         exist_ok=True,
     )
 
     saved_files: List[str] = []
-    rejected_files: List[Dict[str, str]] = []
+
+    rejected_files: List[
+        Dict[str, str]
+    ] = []
 
     for file in files:
 
         if not file.filename:
+
             rejected_files.append(
                 {
                     "file_name": "unknown",
-                    "reason": "Missing filename.",
+                    "reason": (
+                        "Missing filename."
+                    ),
                 }
             )
+
             continue
 
         suffix = Path(
@@ -181,62 +210,84 @@ async def upload_documents(
         ).suffix.lower()
 
         if suffix not in supported_extensions:
+
             rejected_files.append(
                 {
                     "file_name": file.filename,
-                    "reason": "Unsupported file type.",
+                    "reason": (
+                        "Unsupported file type."
+                    ),
                 }
             )
+
             continue
 
         destination = (
             upload_path
-            / Path(file.filename).name
+            / Path(
+                file.filename
+            ).name
         )
 
         content = await file.read()
 
-        destination.write_bytes(content)
+        destination.write_bytes(
+            content
+        )
 
         saved_files.append(
             str(destination)
         )
 
     if not saved_files:
+
         raise HTTPException(
             status_code=400,
             detail={
                 "message": (
-                    "No supported files were uploaded."
+                    "No supported files "
+                    "were uploaded."
                 ),
-                "rejected_files": rejected_files,
+                "rejected_files": (
+                    rejected_files
+                ),
             },
         )
 
     try:
-        build_vectorstore(saved_files)
+
+        build_vectorstore(
+            saved_files
+        )
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail=(
-                f"Document ingestion failed: {exc}"
+                "Document ingestion failed: "
+                f"{exc}"
             ),
         ) from exc
 
     return {
         "message": (
-            "Documents processed successfully."
+            "Documents processed "
+            "successfully."
         ),
         "uploaded_files": [
             Path(path).name
             for path in saved_files
         ],
-        "rejected_files": rejected_files,
+        "rejected_files": (
+            rejected_files
+        ),
     }
 
 
-@api.delete("/documents/{document_id}")
+@api.delete(
+    "/documents/{document_id}"
+)
 def remove_document(
     document_id: str,
 ) -> Dict[str, Any]:
@@ -246,6 +297,7 @@ def remove_document(
     )
 
     if not deleted:
+
         raise HTTPException(
             status_code=404,
             detail="Document not found.",
@@ -253,22 +305,20 @@ def remove_document(
 
     return {
         "message": (
-            "Document removed successfully."
+            "Document removed "
+            "successfully."
         ),
         "document_id": document_id,
     }
 
 
 # ---------------------------------------------------------------------------
-# HITL Helpers
+# HITL
 # ---------------------------------------------------------------------------
 
 def extract_interrupt_payload(
     result: Dict[str, Any],
 ) -> Dict[str, Any] | None:
-    """
-    Extract the payload generated by LangGraph interrupt().
-    """
 
     interrupts = result.get(
         "__interrupt__"
@@ -285,7 +335,10 @@ def extract_interrupt_payload(
         first_interrupt,
     )
 
-    if isinstance(payload, dict):
+    if isinstance(
+        payload,
+        dict,
+    ):
         return payload
 
     return {
@@ -296,13 +349,13 @@ def extract_interrupt_payload(
 
 
 # ---------------------------------------------------------------------------
-# Build completed response
+# Response Builder
 # ---------------------------------------------------------------------------
 
 def build_chat_response(
     result: Dict[str, Any],
     thread_id: str,
-    latency: float = 0.0,
+    latency: float,
 ) -> ChatResponse:
 
     answer = result.get(
@@ -318,6 +371,7 @@ def build_chat_response(
     )
 
     if sources is None:
+
         sources = extract_sources(
             result.get(
                 "documents",
@@ -356,10 +410,16 @@ def build_chat_response(
     )
 
     metrics = MetricsResponse(
-        retrieved_documents=retrieved_documents,
-        relevant_documents=relevant_documents,
+        retrieved_documents=(
+            retrieved_documents
+        ),
+        relevant_documents=(
+            relevant_documents
+        ),
         grounded=grounded,
-        answers_question=answers_question,
+        answers_question=(
+            answers_question
+        ),
         retry_count=retry_count,
         latency_seconds=round(
             latency,
@@ -395,9 +455,12 @@ def chat(
     question = request.question.strip()
 
     if not question:
+
         raise HTTPException(
             status_code=400,
-            detail="Question cannot be empty.",
+            detail=(
+                "Question cannot be empty."
+            ),
         )
 
     thread_id = str(
@@ -471,10 +534,6 @@ def chat(
                 ),
             )
 
-        # ---------------------------------------------------------------
-        # Normal completed response
-        # ---------------------------------------------------------------
-
         observer.finish(
             result
         )
@@ -488,13 +547,10 @@ def chat(
         raise HTTPException(
             status_code=500,
             detail=(
-                f"RAG execution failed: {exc}"
+                "RAG execution failed: "
+                f"{exc}"
             ),
         ) from exc
-
-    # -------------------------------------------------------------------
-    # Build result
-    # -------------------------------------------------------------------
 
     answer = result.get(
         "answer",
@@ -509,6 +565,7 @@ def chat(
     )
 
     if sources is None:
+
         sources = extract_sources(
             result.get(
                 "documents",
@@ -561,9 +618,7 @@ def chat(
             answers_question
         ),
         retry_count=retry_count,
-        latency_seconds=(
-            latency
-        ),
+        latency_seconds=latency,
         sources=sources,
     )
 
@@ -579,14 +634,14 @@ def chat(
 
 
 # ---------------------------------------------------------------------------
-# HITL Web Search Approval
+# Web Search Approval / Rejection
 # ---------------------------------------------------------------------------
 
 @api.post(
     "/chat/{thread_id}/web-search",
     response_model=ChatResponse,
 )
-def approve_web_search(
+def respond_to_web_search(
     thread_id: str,
     request: WebSearchApprovalRequest,
 ) -> ChatResponse:
@@ -623,9 +678,9 @@ def approve_web_search(
         - start_time
     )
 
-    # -------------------------------------------------------------------
-    # If another interrupt occurs
-    # -------------------------------------------------------------------
+    # ---------------------------------------------------------------
+    # Another interrupt
+    # ---------------------------------------------------------------
 
     interrupt_payload = (
         extract_interrupt_payload(
@@ -659,9 +714,9 @@ def approve_web_search(
             ),
         )
 
-    # -------------------------------------------------------------------
-    # Human rejected web search
-    # -------------------------------------------------------------------
+    # ---------------------------------------------------------------
+    # Rejected
+    # ---------------------------------------------------------------
 
     if not request.approved:
 
@@ -671,9 +726,10 @@ def approve_web_search(
                 "generation",
                 (
                     "I couldn't answer this "
-                    "confidently using the available "
-                    "local documents, and web search "
-                    "was not approved."
+                    "confidently using the "
+                    "available local documents, "
+                    "and web search was not "
+                    "approved."
                 ),
             ),
         )
@@ -682,6 +738,8 @@ def approve_web_search(
         result["generation"] = answer
         result["route"] = "web_rejected"
         result["sources"] = []
+        result["grounded"] = False
+        result["answers_question"] = False
 
         return build_chat_response(
             result=result,
@@ -689,29 +747,22 @@ def approve_web_search(
             latency=latency,
         )
 
-    # -------------------------------------------------------------------
-    # Human approved web search
-    # -------------------------------------------------------------------
+    # ---------------------------------------------------------------
+    # Approved
+    # ---------------------------------------------------------------
 
-    observer = RunObserver(
-        question=result.get(
-            "question",
-            "",
-        )
+    question = result.get(
+        "question",
+        "",
     )
 
-    observer._start_time = (
-        observer._start_time
-        - latency
+    observer = RunObserver(
+        question=question
     )
 
     observer.finish(
         result
     )
-
-    # -------------------------------------------------------------------
-    # Evaluation
-    # -------------------------------------------------------------------
 
     answer = result.get(
         "answer",
@@ -726,6 +777,7 @@ def approve_web_search(
     )
 
     if sources is None:
+
         sources = extract_sources(
             result.get(
                 "documents",
@@ -764,10 +816,7 @@ def approve_web_search(
     )
 
     evaluation_result = EvaluationResult(
-        question=result.get(
-            "question",
-            "",
-        ),
+        question=question,
         answer=answer,
         route=route,
         retrieved_documents=(
@@ -815,7 +864,9 @@ def get_observability() -> Dict[str, Any]:
     }
 
 
-@api.get("/observability/summary")
+@api.get(
+    "/observability/summary"
+)
 def get_observability_summary() -> Dict[str, Any]:
 
     observations = load_observations()
@@ -825,15 +876,20 @@ def get_observability_summary() -> Dict[str, Any]:
     )
 
 
-@api.get("/observability/runs")
+@api.get(
+    "/observability/runs"
+)
 def get_observability_runs(
     limit: int = 50,
 ) -> Dict[str, Any]:
 
     if limit < 1:
+
         raise HTTPException(
             status_code=400,
-            detail="Limit must be at least 1.",
+            detail=(
+                "Limit must be at least 1."
+            ),
         )
 
     observations = load_observations()
@@ -848,27 +904,23 @@ def get_observability_runs(
     }
 
 
-@api.delete("/observability")
+@api.delete(
+    "/observability"
+)
 def clear_observability() -> Dict[str, Any]:
-    """
-    Clear all observability history.
-
-    This does not affect:
-    - uploaded documents
-    - Chroma vector database
-    - evaluation history
-    - benchmark results
-    """
 
     deleted = False
 
     if OBSERVABILITY_FILE.exists():
+
         OBSERVABILITY_FILE.unlink()
+
         deleted = True
 
     return {
         "message": (
-            "Observability history cleared successfully."
+            "Observability history "
+            "cleared successfully."
         ),
         "deleted": deleted,
     }
