@@ -9,8 +9,8 @@ def request_web_search_approval(
     state: GraphState,
 ) -> Dict[str, Any]:
     """
-    Pause the graph and request human approval before
-    executing an external web search.
+    Pause execution and request human approval
+    before performing an external web search.
     """
 
     question = state["question"]
@@ -36,7 +36,9 @@ def request_web_search_approval(
         return {
             "web_search_approved": True,
             "hitl_status": "approved",
-            "hitl_reason": "Human approved web search.",
+            "hitl_reason": (
+                "Human approved web search."
+            ),
         }
 
     print("---HUMAN REJECTED WEB SEARCH---")
@@ -44,5 +46,7 @@ def request_web_search_approval(
     return {
         "web_search_approved": False,
         "hitl_status": "rejected",
-        "hitl_reason": "Human rejected web search.",
+        "hitl_reason": (
+            "Human rejected web search."
+        ),
     }
