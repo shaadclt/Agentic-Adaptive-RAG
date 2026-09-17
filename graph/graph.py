@@ -14,7 +14,14 @@ from graph.nodes.build_response import build_response
 from graph.nodes.generate import generate
 from graph.nodes.grade_documents import grade_documents
 from graph.nodes.increment_retry import increment_retry
+from graph.nodes.output_security import (
+    output_security_check,
+)
 from graph.nodes.retrieve import retrieve
+from graph.nodes.security import (
+    route_after_security,
+    security_check,
+)
 from graph.nodes.web_search import web_search
 from graph.nodes.web_search_approval import (
     request_web_search_approval,
@@ -30,6 +37,7 @@ from retrieval import retriever
 MAX_GENERATION_RETRIES = 2
 
 ROUTER_CONTEXT_DOCUMENTS = 4
+
 ROUTER_CONTEXT_CHARS = 6000
 
 
@@ -45,8 +53,9 @@ def normalize_binary_score(
 def retrieve_router_context(
     state: GraphState,
 ) -> Dict[str, Any]:
-
-    print("---RETRIEVE ROUTER CONTEXT---")
+    print(
+        "---RETRIEVE ROUTER CONTEXT---"
+    )
 
     question = state["question"]
 
@@ -78,7 +87,6 @@ def retrieve_router_context(
 def route_question(
     state: GraphState,
 ) -> str:
-
     print("---ROUTE QUESTION---")
 
     question = state["question"]
@@ -96,7 +104,6 @@ def route_question(
     )
 
     if route.datasource == "websearch":
-
         print(
             "---ROUTER DECISION: WEB SEARCH---"
         )
@@ -113,26 +120,25 @@ def route_question(
 def mark_local_route(
     state: GraphState,
 ) -> Dict[str, Any]:
-
     return {
-        "route": "local"
+        "route": "local",
     }
 
 
 def mark_web_route(
     state: GraphState,
 ) -> Dict[str, Any]:
-
     return {
-        "route": "web"
+        "route": "web",
     }
 
 
 def decide_to_generate(
     state: GraphState,
 ) -> str:
-
-    print("---ASSESS GRADED DOCUMENTS---")
+    print(
+        "---ASSESS GRADED DOCUMENTS---"
+    )
 
     web_search_required = state.get(
         "web_search",
@@ -140,10 +146,9 @@ def decide_to_generate(
     )
 
     if web_search_required:
-
         print(
             "---DECISION: LOCAL DOCUMENTS "
-            "INSUFFICIENT, REQUEST WEB SEARCH---"
+            "INSUFFICIENT, INCLUDE WEB SEARCH---"
         )
 
         return "websearch"
@@ -158,8 +163,9 @@ def decide_to_generate(
 def evaluate_generation(
     state: GraphState,
 ) -> Dict[str, Any]:
-
-    print("---CHECK HALLUCINATIONS---")
+    print(
+        "---CHECK HALLUCINATIONS---"
+    )
 
     question = state["question"]
 
@@ -174,7 +180,7 @@ def evaluate_generation(
     )
 
     context = format_documents(
-        documents
+        documents,
     )
 
     hallucination_score = (
@@ -194,10 +200,9 @@ def evaluate_generation(
     )
 
     if not grounded:
-
         print(
-            "---DECISION: GENERATION IS NOT "
-            "GROUNDED IN DOCUMENTS---"
+            "---DECISION: GENERATION IS "
+            "NOT GROUNDED IN DOCUMENTS---"
         )
 
         return {
@@ -206,21 +211,19 @@ def evaluate_generation(
         }
 
     print(
-        "---DECISION: GENERATION IS GROUNDED "
-        "IN DOCUMENTS---"
+        "---DECISION: GENERATION IS "
+        "GROUNDED IN DOCUMENTS---"
     )
 
     print(
         "---GRADE GENERATION VS QUESTION---"
     )
 
-    answer_score = (
-        answer_grader.invoke(
-            {
-                "question": question,
-                "generation": generation,
-            }
-        )
+    answer_score = answer_grader.invoke(
+        {
+            "question": question,
+            "generation": generation,
+        }
     )
 
     answers_question = (
@@ -231,17 +234,14 @@ def evaluate_generation(
     )
 
     if answers_question:
-
         print(
             "---DECISION: GENERATION "
             "ADDRESSES QUESTION---"
         )
-
     else:
-
         print(
-            "---DECISION: GENERATION DOES "
-            "NOT ADDRESS QUESTION---"
+            "---DECISION: GENERATION "
+            "DOES NOT ADDRESS QUESTION---"
         )
 
     return {
@@ -253,7 +253,6 @@ def evaluate_generation(
 def decide_after_evaluation(
     state: GraphState,
 ) -> str:
-
     grounded = state.get(
         "grounded",
         False,
@@ -273,7 +272,6 @@ def decide_after_evaluation(
         return "useful"
 
     if retry_count < MAX_GENERATION_RETRIES:
-
         print(
             "---RETRY GENERATION "
             f"({retry_count + 1}/"
@@ -283,8 +281,8 @@ def decide_after_evaluation(
         return "retry"
 
     print(
-        "---DECISION: MAXIMUM RETRIES REACHED, "
-        "RETURN BEST AVAILABLE ANSWER---"
+        "---DECISION: MAXIMUM RETRIES "
+        "REACHED, RETURN BEST AVAILABLE ANSWER---"
     )
 
     return "not useful"
@@ -293,36 +291,33 @@ def decide_after_evaluation(
 def decide_web_search_approval(
     state: GraphState,
 ) -> str:
-
     approved = state.get(
         "web_search_approved",
         False,
     )
 
     if approved:
-
-        print(
-            "---HITL DECISION: APPROVED---"
-        )
-
         return "approved"
-
-    print(
-        "---HITL DECISION: REJECTED---"
-    )
 
     return "rejected"
 
 
-# ---------------------------------------------------------------------------
-# Build Graph
-# ---------------------------------------------------------------------------
+# ============================================================
+# GRAPH
+# ============================================================
 
 workflow = StateGraph(
     GraphState
 )
 
 
+# Security
+workflow.add_node(
+    "security_check",
+    security_check,
+)
+
+# Existing RAG nodes
 workflow.add_node(
     "retrieve_router_context",
     retrieve_router_context,
@@ -364,6 +359,12 @@ workflow.add_node(
 )
 
 workflow.add_node(
+    "evaluate_generation",
+    evaluate_generation,
+)
+
+# HITL
+workflow.add_node(
     "web_search_approval",
     request_web_search_approval,
 )
@@ -373,26 +374,41 @@ workflow.add_node(
     web_search_rejected,
 )
 
+# Output security
 workflow.add_node(
-    "evaluate_generation",
-    evaluate_generation,
+    "output_security",
+    output_security_check,
 )
 
+# Final response
 workflow.add_node(
     "build_response",
     build_response,
 )
 
 
-# ---------------------------------------------------------------------------
-# Graph Edges
-# ---------------------------------------------------------------------------
+# ============================================================
+# SECURITY FIRST
+# ============================================================
 
 workflow.add_edge(
     START,
-    "retrieve_router_context",
+    "security_check",
 )
 
+workflow.add_conditional_edges(
+    "security_check",
+    route_after_security,
+    {
+        "allowed": "retrieve_router_context",
+        "blocked": "build_response",
+    },
+)
+
+
+# ============================================================
+# ROUTER
+# ============================================================
 
 workflow.add_conditional_edges(
     "retrieve_router_context",
@@ -404,17 +420,19 @@ workflow.add_conditional_edges(
 )
 
 
+# ============================================================
+# LOCAL RAG
+# ============================================================
+
 workflow.add_edge(
     "mark_local_route",
     "retrieve",
 )
 
-
 workflow.add_edge(
     "retrieve",
     "grade_documents",
 )
-
 
 workflow.add_conditional_edges(
     "grade_documents",
@@ -426,15 +444,14 @@ workflow.add_conditional_edges(
 )
 
 
-# ---------------------------------------------------------------------------
-# Web Search HITL
-# ---------------------------------------------------------------------------
+# ============================================================
+# WEB SEARCH + HITL
+# ============================================================
 
 workflow.add_edge(
     "mark_web_route",
     "web_search_approval",
 )
-
 
 workflow.add_conditional_edges(
     "web_search_approval",
@@ -445,16 +462,10 @@ workflow.add_conditional_edges(
     },
 )
 
-
 workflow.add_edge(
     "web_search_rejected",
-    END,
+    "build_response",
 )
-
-
-# ---------------------------------------------------------------------------
-# Generation
-# ---------------------------------------------------------------------------
 
 workflow.add_edge(
     "websearch",
@@ -462,22 +473,24 @@ workflow.add_edge(
 )
 
 
+# ============================================================
+# GENERATION + EVALUATION
+# ============================================================
+
 workflow.add_edge(
     "generate",
     "evaluate_generation",
 )
 
-
 workflow.add_conditional_edges(
     "evaluate_generation",
     decide_after_evaluation,
     {
-        "useful": "build_response",
+        "useful": "output_security",
         "retry": "increment_retry",
-        "not useful": "build_response",
+        "not useful": "output_security",
     },
 )
-
 
 workflow.add_edge(
     "increment_retry",
@@ -485,16 +498,30 @@ workflow.add_edge(
 )
 
 
+# ============================================================
+# OUTPUT SECURITY
+# ============================================================
+
+workflow.add_edge(
+    "output_security",
+    "build_response",
+)
+
+
+# ============================================================
+# END
+# ============================================================
+
 workflow.add_edge(
     "build_response",
     END,
 )
 
 
-# ---------------------------------------------------------------------------
-# Checkpointing
-# ---------------------------------------------------------------------------
-
+# Development checkpointer.
+#
+# For production deployment this should eventually be replaced
+# by a persistent checkpointer such as PostgreSQL.
 checkpointer = InMemorySaver()
 
 
