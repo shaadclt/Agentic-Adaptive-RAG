@@ -309,3 +309,4 @@ data/documents/benchmark_knowledge_base.md
 evaluation/ragas_results.json
 evaluation/final_report.json
 observability_history.jsonl
+uploads/
