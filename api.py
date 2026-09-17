@@ -21,7 +21,13 @@ from ingestion import (
     list_documents,
 )
 
-from observability import RunObserver
+from observability import (
+    RunObserver,
+    OBSERVABILITY_FILE,
+    load_observability_history,
+    calculate_observability_summary,
+    clear_observability_history,
+)
 
 from graph.graph import app as rag_app
 
@@ -821,30 +827,22 @@ def remove_document(
 
 
 @api.post("/chat")
-def chat(
-    request: ChatRequest,
-) -> Dict[str, Any]:
-
+async def chat(request: ChatRequest):
     question = request.question.strip()
 
     if not question:
-
         raise HTTPException(
             status_code=400,
             detail="Question cannot be empty.",
         )
 
-    thread_id = get_thread_id(
-        request.thread_id
-    )
-
+    observer = RunObserver(question)
     start_time = perf_counter()
 
     try:
-
         config = {
             "configurable": {
-                "thread_id": thread_id,
+                "thread_id": str(uuid.uuid4()),
             }
         }
 
@@ -855,58 +853,95 @@ def chat(
             config=config,
         )
 
-        latency = (
-            perf_counter()
-            - start_time
-        )
+        latency = perf_counter() - start_time
 
-        result = dict(
-            result or {}
-        )
+        sources = result.get("sources", [])
 
-        # ---------------------------------------------------------------
-        # HITL INTERRUPT
-        # ---------------------------------------------------------------
-
-        if "__interrupt__" in result:
-
-            interrupts = (
+        observer.record(
+            route=str(
                 result.get(
-                    "__interrupt__"
+                    "route",
+                    "unknown",
+                )
+            ),
+
+            retrieved_documents=len(
+                result.get(
+                    "retrieved_documents",
+                    [],
                 )
                 or []
-            )
+            ),
 
-            interrupt_value = None
-
-            if interrupts:
-
-                first_interrupt = (
-                    interrupts[0]
+            relevant_documents=len(
+                result.get(
+                    "relevant_documents",
+                    [],
                 )
+                or []
+            ),
 
-                interrupt_value = getattr(
-                    first_interrupt,
-                    "value",
-                    first_interrupt,
+            grounded=bool(
+                result.get(
+                    "grounded",
+                    False,
                 )
+            ),
 
-            return {
-                "status": (
-                    "approval_required"
-                ),
-                "thread_id": thread_id,
-                "question": question,
-                "interrupt": (
-                    interrupt_value
-                ),
-                "hitl_status": "pending",
-                "message": (
-                    "The agent wants to "
-                    "use web search. "
-                    "Approval required."
-                ),
-            }
+            answers_question=bool(
+                result.get(
+                    "answers_question",
+                    False,
+                )
+            ),
+
+            retry_count=int(
+                result.get(
+                    "retry_count",
+                    0,
+                )
+                or 0
+            ),
+
+            latency_seconds=latency,
+
+            sources=sources,
+
+            success=True,
+
+            hitl_status=str(
+                result.get(
+                    "hitl_status",
+                    "",
+                )
+                or ""
+            ),
+
+            hitl_reason=str(
+                result.get(
+                    "hitl_reason",
+                    "",
+                )
+                or ""
+            ),
+        )
+
+        return result
+
+    except Exception as exc:
+        latency = perf_counter() - start_time
+
+        observer.record(
+            route="error",
+            latency_seconds=latency,
+            success=False,
+            error=str(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
 
         # ---------------------------------------------------------------
         # COMPLETED RESPONSE
