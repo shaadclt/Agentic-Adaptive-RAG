@@ -1,178 +1,26 @@
 import json
-
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 
-OBSERVABILITY_FILE = Path(
-    "./observability_history.jsonl"
-)
+OBSERVABILITY_FILE = Path("./observability_history.jsonl")
 
 
 class RunObserver:
     """
-    Collect and persist observability and security
-    information for a single Agentic RAG execution.
+    Records one RAG execution for observability.
     """
 
     def __init__(
         self,
         question: str,
-        storage_path: Path | str = OBSERVABILITY_FILE,
-    ) -> None:
-
+        storage_path: Path = OBSERVABILITY_FILE,
+    ):
         self.question = question
+        self.storage_path = Path(storage_path)
 
-        self.storage_path = Path(
-            storage_path
-        )
-
-        self.started_at = (
-            datetime.now(
-                timezone.utc
-            ).isoformat()
-        )
-
-        self._start_time = perf_counter()
-
-    def finish(
-        self,
-        result: Dict[str, Any],
-        error: Optional[str] = None,
-    ) -> Dict[str, Any]:
-
-        latency_seconds = (
-            perf_counter()
-            - self._start_time
-        )
-
-        sources = result.get(
-            "sources",
-            [],
-        )
-
-        observation = {
-            "timestamp": self.started_at,
-
-            "question": self.question,
-
-            "route": result.get(
-                "route",
-                "unknown",
-            ),
-
-            "retrieved_documents": result.get(
-                "retrieved_documents",
-                0,
-            ),
-
-            "relevant_documents": result.get(
-                "relevant_documents",
-                0,
-            ),
-
-            "grounded": result.get(
-                "grounded",
-                False,
-            ),
-
-            "answers_question": result.get(
-                "answers_question",
-                False,
-            ),
-
-            "retry_count": result.get(
-                "retry_count",
-                0,
-            ),
-
-            "latency_seconds": round(
-                latency_seconds,
-                4,
-            ),
-
-            "source_count": len(
-                sources
-            ),
-
-            "local_source_count": sum(
-                source.get("type") == "local"
-                for source in sources
-                if isinstance(
-                    source,
-                    dict,
-                )
-            ),
-
-            "web_source_count": sum(
-                source.get("type") == "web"
-                for source in sources
-                if isinstance(
-                    source,
-                    dict,
-                )
-            ),
-
-            "success": error is None,
-
-            "error": error or "",
-
-            # HITL
-            "hitl_status": result.get(
-                "hitl_status",
-                "",
-            ),
-
-            "hitl_reason": result.get(
-                "hitl_reason",
-                "",
-            ),
-
-            # Security
-            "security_status": result.get(
-                "security_status",
-                "passed",
-            ),
-
-            "security_reason": result.get(
-                "security_reason",
-                "",
-            ),
-
-            "security_event": result.get(
-                "security_event",
-                "",
-            ),
-
-            "security_redactions": result.get(
-                "security_redactions",
-                0,
-            ),
-        }
-
-        self._save(
-            observation
-        )
-
-        return observation
-
-    def fail(
-        self,
-        error: Exception,
-    ) -> Dict[str, Any]:
-
-        return self.finish(
-            {},
-            error=str(error),
-        )
-
-    def _save(
-        self,
-        observation: Dict[str, Any],
-    ) -> None:
-
+    def _write(self, record: Dict[str, Any]) -> None:
         self.storage_path.parent.mkdir(
             parents=True,
             exist_ok=True,
@@ -182,67 +30,149 @@ class RunObserver:
             "a",
             encoding="utf-8",
         ) as file:
-
             json.dump(
-                observation,
+                record,
                 file,
                 ensure_ascii=False,
             )
-
             file.write("\n")
 
+    def record(
+        self,
+        route: str = "unknown",
+        retrieved_documents: int = 0,
+        relevant_documents: int = 0,
+        grounded: bool = False,
+        answers_question: bool = False,
+        retry_count: int = 0,
+        latency_seconds: float = 0.0,
+        sources: Optional[List[Dict[str, Any]]] = None,
+        success: bool = True,
+        error: str = "",
+        hitl_status: str = "",
+        hitl_reason: str = "",
+    ) -> None:
+        """
+        Persist one observability record.
+        """
 
-def load_observations(
-    storage_path: Path | str = OBSERVABILITY_FILE,
+        sources = sources or []
+
+        local_source_count = sum(
+            1
+            for source in sources
+            if source.get("type") == "local"
+        )
+
+        web_source_count = sum(
+            1
+            for source in sources
+            if source.get("type") == "web"
+        )
+
+        record = {
+            "timestamp": datetime.now(
+                timezone.utc
+            ).isoformat(),
+
+            "question": self.question,
+
+            "route": route,
+
+            "retrieved_documents": int(
+                retrieved_documents or 0
+            ),
+
+            "relevant_documents": int(
+                relevant_documents or 0
+            ),
+
+            "grounded": bool(grounded),
+
+            "answers_question": bool(
+                answers_question
+            ),
+
+            "retry_count": int(
+                retry_count or 0
+            ),
+
+            "latency_seconds": round(
+                float(latency_seconds or 0.0),
+                4,
+            ),
+
+            "source_count": len(sources),
+
+            "local_source_count": local_source_count,
+
+            "web_source_count": web_source_count,
+
+            "success": bool(success),
+
+            "error": str(error or ""),
+
+            "hitl_status": str(
+                hitl_status or ""
+            ),
+
+            "hitl_reason": str(
+                hitl_reason or ""
+            ),
+        }
+
+        self._write(record)
+
+
+def load_observability_history(
+    storage_path: Path = OBSERVABILITY_FILE,
 ) -> List[Dict[str, Any]]:
+    """
+    Load observability records from JSONL storage.
+    """
 
-    path = Path(
-        storage_path
-    )
+    storage_path = Path(storage_path)
 
-    if not path.exists():
+    if not storage_path.exists():
         return []
 
-    observations = []
+    records: List[Dict[str, Any]] = []
 
-    with path.open(
+    with storage_path.open(
         "r",
         encoding="utf-8",
     ) as file:
 
         for line in file:
-
             line = line.strip()
 
             if not line:
                 continue
 
             try:
+                record = json.loads(line)
 
-                record = json.loads(
-                    line
-                )
-
-                if isinstance(
-                    record,
-                    dict,
-                ):
-                    observations.append(
-                        record
-                    )
+                if isinstance(record, dict):
+                    records.append(record)
 
             except json.JSONDecodeError:
+                # Ignore malformed individual records
+                # instead of breaking the whole dashboard.
                 continue
 
-    return observations
+    return records
 
 
-def summarize_observations(
-    observations: List[Dict[str, Any]],
+def calculate_observability_summary(
+    records: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
+    """
+    Calculate dashboard-level observability metrics.
+    """
 
-    if not observations:
+    total_runs = len(records)
 
+    if total_runs == 0:
         return {
             "total_runs": 0,
             "successful_runs": 0,
@@ -256,185 +186,127 @@ def summarize_observations(
             "web_route_count": 0,
             "hitl_approved_count": 0,
             "hitl_rejected_count": 0,
-
-            "security_blocked_count": 0,
-            "security_sanitized_count": 0,
-            "security_event_count": 0,
         }
 
-    total = len(
-        observations
+    successful_runs = sum(
+        1
+        for record in records
+        if record.get("success", False)
     )
 
-    successful = sum(
-        bool(
-            item.get(
-                "success",
-                False,
-            )
-        )
-        for item in observations
-    )
-
-    grounded = sum(
-        bool(
-            item.get(
-                "grounded",
-                False,
-            )
-        )
-        for item in observations
-    )
-
-    answers_question = sum(
-        bool(
-            item.get(
-                "answers_question",
-                False,
-            )
-        )
-        for item in observations
-    )
-
-    local_routes = sum(
-        item.get("route") == "local"
-        for item in observations
-    )
-
-    web_routes = sum(
-        item.get("route") == "web"
-        for item in observations
-    )
-
-    hitl_approved = sum(
-        item.get("hitl_status")
-        == "approved"
-        for item in observations
-    )
-
-    hitl_rejected = sum(
-        item.get("hitl_status")
-        == "rejected"
-        for item in observations
-    )
-
-    security_blocked = sum(
-        item.get(
-            "security_status"
-        )
-        == "blocked"
-        for item in observations
-    )
-
-    security_sanitized = sum(
-        item.get(
-            "security_status"
-        )
-        == "output_sanitized"
-        for item in observations
-    )
-
-    security_events = sum(
-        bool(
-            item.get(
-                "security_event",
-                "",
-            )
-        )
-        for item in observations
-    )
+    failed_runs = total_runs - successful_runs
 
     total_latency = sum(
         float(
-            item.get(
+            record.get(
                 "latency_seconds",
                 0.0,
             )
+            or 0.0
         )
-        for item in observations
+        for record in records
     )
 
     total_retries = sum(
         int(
-            item.get(
+            record.get(
                 "retry_count",
                 0,
             )
+            or 0
         )
-        for item in observations
+        for record in records
+    )
+
+    grounded_count = sum(
+        1
+        for record in records
+        if record.get("grounded", False)
+    )
+
+    answer_quality_count = sum(
+        1
+        for record in records
+        if record.get(
+            "answers_question",
+            False,
+        )
+    )
+
+    local_route_count = sum(
+        1
+        for record in records
+        if record.get("route") == "vectorstore"
+    )
+
+    web_route_count = sum(
+        1
+        for record in records
+        if record.get("route") == "websearch"
+    )
+
+    hitl_approved_count = sum(
+        1
+        for record in records
+        if record.get("hitl_status") == "approved"
+    )
+
+    hitl_rejected_count = sum(
+        1
+        for record in records
+        if record.get("hitl_status") == "rejected"
     )
 
     return {
-        "total_runs": total,
+        "total_runs": total_runs,
 
-        "successful_runs": successful,
+        "successful_runs": successful_runs,
 
-        "failed_runs": total - successful,
+        "failed_runs": failed_runs,
 
-        "success_rate": successful / total,
+        "success_rate": round(
+            successful_runs / total_runs,
+            4,
+        ),
 
-        "average_latency_seconds":
-            total_latency / total,
+        "average_latency_seconds": round(
+            total_latency / total_runs,
+            4,
+        ),
 
-        "average_retries":
-            total_retries / total,
+        "average_retries": round(
+            total_retries / total_runs,
+            4,
+        ),
 
-        "grounded_rate":
-            grounded / total,
+        "grounded_rate": round(
+            grounded_count / total_runs,
+            4,
+        ),
 
-        "answer_quality_rate":
-            answers_question / total,
+        "answer_quality_rate": round(
+            answer_quality_count / total_runs,
+            4,
+        ),
 
-        "local_route_count":
-            local_routes,
+        "local_route_count": local_route_count,
 
-        "web_route_count":
-            web_routes,
+        "web_route_count": web_route_count,
 
-        "hitl_approved_count":
-            hitl_approved,
+        "hitl_approved_count": hitl_approved_count,
 
-        "hitl_rejected_count":
-            hitl_rejected,
-
-        "security_blocked_count":
-            security_blocked,
-
-        "security_sanitized_count":
-            security_sanitized,
-
-        "security_event_count":
-            security_events,
+        "hitl_rejected_count": hitl_rejected_count,
     }
 
 
-def run_with_observability(
-    app,
-    question: str,
-) -> Dict[str, Any]:
+def clear_observability_history(
+    storage_path: Path = OBSERVABILITY_FILE,
+) -> None:
+    """
+    Delete all observability history.
+    """
 
-    observer = RunObserver(
-        question=question
-    )
+    storage_path = Path(storage_path)
 
-    try:
-
-        result = app.invoke(
-            {
-                "question": question
-            }
-        )
-
-        observer.finish(
-            result
-        )
-
-        return result
-
-    except Exception as exc:
-
-        observer.fail(
-            exc
-        )
-
-        raise
+    if storage_path.exists():
+        storage_path.unlink()
