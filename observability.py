@@ -1,4 +1,5 @@
 import json
+
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -12,8 +13,8 @@ OBSERVABILITY_FILE = Path(
 
 class RunObserver:
     """
-    Collect and persist observability data
-    for a single Agentic RAG execution.
+    Collect and persist observability and security
+    information for a single Agentic RAG execution.
     """
 
     def __init__(
@@ -54,6 +55,7 @@ class RunObserver:
 
         observation = {
             "timestamp": self.started_at,
+
             "question": self.question,
 
             "route": result.get(
@@ -117,7 +119,7 @@ class RunObserver:
 
             "error": error or "",
 
-            # HITL information
+            # HITL
             "hitl_status": result.get(
                 "hitl_status",
                 "",
@@ -126,6 +128,27 @@ class RunObserver:
             "hitl_reason": result.get(
                 "hitl_reason",
                 "",
+            ),
+
+            # Security
+            "security_status": result.get(
+                "security_status",
+                "passed",
+            ),
+
+            "security_reason": result.get(
+                "security_reason",
+                "",
+            ),
+
+            "security_event": result.get(
+                "security_event",
+                "",
+            ),
+
+            "security_redactions": result.get(
+                "security_redactions",
+                0,
             ),
         }
 
@@ -180,9 +203,7 @@ def load_observations(
     if not path.exists():
         return []
 
-    observations: List[
-        Dict[str, Any]
-    ] = []
+    observations = []
 
     with path.open(
         "r",
@@ -235,6 +256,10 @@ def summarize_observations(
             "web_route_count": 0,
             "hitl_approved_count": 0,
             "hitl_rejected_count": 0,
+
+            "security_blocked_count": 0,
+            "security_sanitized_count": 0,
+            "security_event_count": 0,
         }
 
     total = len(
@@ -293,6 +318,32 @@ def summarize_observations(
         for item in observations
     )
 
+    security_blocked = sum(
+        item.get(
+            "security_status"
+        )
+        == "blocked"
+        for item in observations
+    )
+
+    security_sanitized = sum(
+        item.get(
+            "security_status"
+        )
+        == "output_sanitized"
+        for item in observations
+    )
+
+    security_events = sum(
+        bool(
+            item.get(
+                "security_event",
+                "",
+            )
+        )
+        for item in observations
+    )
+
     total_latency = sum(
         float(
             item.get(
@@ -315,25 +366,45 @@ def summarize_observations(
 
     return {
         "total_runs": total,
+
         "successful_runs": successful,
+
         "failed_runs": total - successful,
+
         "success_rate": successful / total,
-        "average_latency_seconds": (
-            total_latency / total
-        ),
-        "average_retries": (
-            total_retries / total
-        ),
-        "grounded_rate": (
-            grounded / total
-        ),
-        "answer_quality_rate": (
-            answers_question / total
-        ),
-        "local_route_count": local_routes,
-        "web_route_count": web_routes,
-        "hitl_approved_count": hitl_approved,
-        "hitl_rejected_count": hitl_rejected,
+
+        "average_latency_seconds":
+            total_latency / total,
+
+        "average_retries":
+            total_retries / total,
+
+        "grounded_rate":
+            grounded / total,
+
+        "answer_quality_rate":
+            answers_question / total,
+
+        "local_route_count":
+            local_routes,
+
+        "web_route_count":
+            web_routes,
+
+        "hitl_approved_count":
+            hitl_approved,
+
+        "hitl_rejected_count":
+            hitl_rejected,
+
+        "security_blocked_count":
+            security_blocked,
+
+        "security_sanitized_count":
+            security_sanitized,
+
+        "security_event_count":
+            security_events,
     }
 
 
@@ -350,7 +421,7 @@ def run_with_observability(
 
         result = app.invoke(
             {
-                "question": question,
+                "question": question
             }
         )
 
