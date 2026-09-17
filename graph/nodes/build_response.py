@@ -15,7 +15,7 @@ def build_response(
     )
 
     sources = extract_sources(
-        documents
+        documents,
     )
 
     route = state.get(
@@ -50,7 +50,6 @@ def build_response(
         "route": route,
         "retry_count": retry_count,
 
-        # Observability fields
         "retrieved_documents": state.get(
             "retrieved_documents",
             len(documents),
@@ -69,5 +68,37 @@ def build_response(
         "answers_question": state.get(
             "answers_question",
             False,
+        ),
+
+        # HITL
+        "hitl_status": state.get(
+            "hitl_status",
+            "",
+        ),
+
+        "hitl_reason": state.get(
+            "hitl_reason",
+            "",
+        ),
+
+        # Security
+        "security_status": state.get(
+            "security_status",
+            "passed",
+        ),
+
+        "security_reason": state.get(
+            "security_reason",
+            "",
+        ),
+
+        "security_event": state.get(
+            "security_event",
+            "",
+        ),
+
+        "security_redactions": state.get(
+            "security_redactions",
+            0,
         ),
     }
