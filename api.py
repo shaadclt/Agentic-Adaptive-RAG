@@ -1,71 +1,77 @@
 from __future__ import annotations
 
+import os
 import shutil
-import uuid
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from time import perf_counter
+from typing import Any, Dict, List, Optional
 
-from fastapi import (
-    FastAPI,
-    File,
-    HTTPException,
-    UploadFile,
-)
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from evaluation import EvaluationResult, EvaluationTracker
-from graph.graph import app
 from ingestion import (
+    SUPPORTED_EXTENSIONS,
+    build_vectorstore,
     delete_document,
-    document_exists,
-    get_files_from_directory,
-    ingest_file,
     list_documents,
 )
 from observability import (
     RunObserver,
-    load_observations,
-    summarize_observations,
-)
-from response import Source
-from security.prompt_guard import check_prompt
-
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-UPLOAD_DIR = Path("./uploads")
-
-UPLOAD_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
+    clear_observability_history,
+    get_observability_summary,
+    load_observability_history,
 )
 
+from graph.graph import app as rag_app
 
-# ============================================================
-# FASTAPI
-# ============================================================
 
-app_api = FastAPI(
+load_dotenv()
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:3000",
+)
+
+MAX_UPLOAD_SIZE_MB = int(
+    os.getenv("MAX_UPLOAD_SIZE_MB", "25")
+)
+
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+
+# ---------------------------------------------------------------------------
+# FastAPI
+# ---------------------------------------------------------------------------
+
+api = FastAPI(
     title="Agentic Adaptive RAG API",
     description=(
-        "Production-oriented Agentic RAG API with "
-        "adaptive routing, HITL web-search approval, "
-        "security controls, evaluation, and observability."
+        "Agentic RAG backend with adaptive routing, "
+        "document ingestion, HITL web-search approval, "
+        "observability, security and evaluation."
     ),
     version="1.0.0",
 )
 
 
-# ============================================================
-# CORS
-# ============================================================
+# Keep both variable names available.
+# This prevents problems if the frontend/backend tooling expects either.
+app = api
 
-app_api.add_middleware(
+
+api.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        FRONTEND_URL,
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
@@ -75,337 +81,211 @@ app_api.add_middleware(
 )
 
 
-# ============================================================
-# MODELS
-# ============================================================
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
 
 class ChatRequest(BaseModel):
-    question: str = Field(
-        ...,
-        min_length=1,
-        max_length=4000,
-    )
+    question: str
+    thread_id: Optional[str] = None
 
 
-class WebSearchApprovalRequest(BaseModel):
+class HITLRequest(BaseModel):
+    thread_id: str
     approved: bool
 
 
-class SourceResponse(BaseModel):
-    type: str = ""
-    title: str = ""
-    file_name: str = ""
-    url: str = ""
-    source: str = ""
-    document_id: str = ""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-class MetricsResponse(BaseModel):
-    retrieved_documents: int = 0
-    relevant_documents: int = 0
-    grounded: bool = False
-    answers_question: bool = False
-    retry_count: int = 0
-    latency_seconds: float = 0.0
+def _safe_str(value: Any) -> str:
+    if value is None:
+        return ""
+
+    return str(value)
 
 
-class ChatResponse(BaseModel):
-    status: str = "completed"
-
-    answer: str = ""
-
-    route: str = ""
-
-    sources: List[SourceResponse] = Field(
-        default_factory=list
-    )
-
-    metrics: MetricsResponse | None = None
-
-    thread_id: str = ""
-
-    approval_required: bool = False
-
-    approval_type: str = ""
-
-    approval_title: str = ""
-
-    approval_message: str = ""
-
-    # Security
-    security_status: str = "passed"
-
-    security_reason: str = ""
-
-    security_event: str = ""
-
-    security_redactions: int = 0
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
-class DocumentResponse(BaseModel):
-    document_id: str
-    file_name: str
-    file_type: str = ""
-    source: str = ""
-    chunk_count: int = 0
+def _safe_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
 
-
-class HealthResponse(BaseModel):
-    status: str
-    documents: int
-    version: str
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def get_graph_config(
-    thread_id: str,
-) -> Dict[str, Any]:
-    return {
-        "configurable": {
-            "thread_id": thread_id,
-        }
-    }
-
-
-def extract_interrupt(
-    result: Dict[str, Any],
-) -> Dict[str, Any] | None:
-
-    interrupts = result.get(
-        "__interrupt__"
-    )
-
-    if not interrupts:
-        return None
-
-    first_interrupt = interrupts[0]
-
-    value = getattr(
-        first_interrupt,
-        "value",
-        None,
-    )
-
-    if isinstance(
-        value,
-        dict,
-    ):
+    if isinstance(value, bool):
         return value
 
-    return {
-        "type": "human_approval",
-        "title": "Approval required",
-        "message": "Human approval is required to continue.",
-    }
+    if isinstance(value, str):
+        return value.lower() in {
+            "true",
+            "1",
+            "yes",
+            "y",
+        }
+
+    return bool(value)
 
 
-def build_chat_response(
+def _normalise_route(result: Dict[str, Any]) -> str:
+    route = result.get("route")
+
+    if route:
+        route = str(route)
+
+        if route == "vectorstore":
+            return "local"
+
+        if route == "websearch":
+            return "web"
+
+        return route
+
+    # Some graph implementations expose web_search separately.
+    if result.get("web_search") is True:
+        return "web"
+
+    return "unknown"
+
+
+def _build_evaluation_result(
+    question: str,
     result: Dict[str, Any],
-    thread_id: str,
     latency_seconds: float,
-) -> ChatResponse:
+    error: str = "",
+) -> EvaluationResult:
 
-    raw_sources = result.get(
-        "sources",
-        [],
+    answer = _safe_str(
+        result.get(
+            "answer",
+            result.get("generation", ""),
+        )
     )
 
-    sources = []
-
-    for source in raw_sources:
-        if isinstance(
-            source,
-            dict,
-        ):
-            sources.append(
-                SourceResponse(
-                    **{
-                        key: source.get(
-                            key,
-                            "",
-                        )
-                        for key in SourceResponse.model_fields
-                    }
-                )
-            )
-
-    metrics = MetricsResponse(
-        retrieved_documents=result.get(
+    retrieved_documents = _safe_int(
+        result.get(
             "retrieved_documents",
-            0,
-        ),
-        relevant_documents=result.get(
+            len(result.get("documents", []) or []),
+        )
+    )
+
+    relevant_documents = _safe_int(
+        result.get(
             "relevant_documents",
             0,
+        )
+    )
+
+    return EvaluationResult(
+        question=question,
+        answer=answer,
+        route=_normalise_route(result),
+        retrieved_documents=retrieved_documents,
+        relevant_documents=relevant_documents,
+        grounded=_safe_bool(
+            result.get("grounded", False)
         ),
-        grounded=result.get(
-            "grounded",
-            False,
+        answers_question=_safe_bool(
+            result.get("answers_question", False)
         ),
-        answers_question=result.get(
-            "answers_question",
-            False,
-        ),
-        retry_count=result.get(
-            "retry_count",
-            0,
+        retry_count=_safe_int(
+            result.get("retry_count", 0)
         ),
         latency_seconds=round(
             latency_seconds,
             4,
         ),
-    )
-
-    return ChatResponse(
-        status="completed",
-
-        answer=result.get(
-            "answer",
-            result.get(
-                "generation",
-                "",
-            ),
-        ),
-
-        route=result.get(
-            "route",
-            "",
-        ),
-
-        sources=sources,
-
-        metrics=metrics,
-
-        thread_id=thread_id,
-
-        security_status=result.get(
-            "security_status",
-            "passed",
-        ),
-
-        security_reason=result.get(
-            "security_reason",
-            "",
-        ),
-
-        security_event=result.get(
-            "security_event",
-            "",
-        ),
-
-        security_redactions=result.get(
-            "security_redactions",
-            0,
-        ),
-
-        approval_required=False,
+        sources=result.get(
+            "sources",
+            [],
+        ) or [],
+        error=error,
     )
 
 
-def save_uploaded_file(
-    upload: UploadFile,
-) -> Path:
-
-    if not upload.filename:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded file must have a filename.",
-        )
-
-    original_name = Path(
-        upload.filename
-    ).name
-
-    extension = Path(
-        original_name
-    ).suffix.lower()
-
-    allowed_extensions = {
-        ".pdf",
-        ".docx",
-        ".txt",
-        ".md",
-    }
-
-    if extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported file type. "
-                "Supported types: PDF, DOCX, TXT, MD."
-            ),
-        )
-
-    safe_name = (
-        f"{uuid.uuid4().hex}"
-        f"_{original_name}"
-    )
-
-    destination = (
-        UPLOAD_DIR
-        / safe_name
-    )
+def _record_evaluation(
+    question: str,
+    result: Dict[str, Any],
+    latency_seconds: float,
+    error: str = "",
+) -> None:
 
     try:
-        with destination.open(
-            "wb"
-        ) as output:
+        tracker = EvaluationTracker()
 
-            shutil.copyfileobj(
-                upload.file,
-                output,
-            )
+        evaluation_result = _build_evaluation_result(
+            question=question,
+            result=result,
+            latency_seconds=latency_seconds,
+            error=error,
+        )
+
+        tracker.add(evaluation_result)
 
     except Exception as exc:
-
-        if destination.exists():
-            destination.unlink()
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Failed to save uploaded file: {exc}"
-            ),
-        ) from exc
-
-    return destination
+        # Evaluation must never break the actual RAG request.
+        print(
+            "WARNING: Failed to record evaluation:",
+            str(exc),
+        )
 
 
-# ============================================================
-# HEALTH
-# ============================================================
+def _get_thread_id(request_thread_id: Optional[str]) -> str:
+    if request_thread_id:
+        return request_thread_id
 
-@app_api.get(
-    "/health",
-    response_model=HealthResponse,
-)
-def health() -> HealthResponse:
-
-    documents = list_documents()
-
-    return HealthResponse(
-        status="ok",
-        documents=len(documents),
-        version="1.0.0",
-    )
+    # Simple deterministic fallback for clients that don't
+    # explicitly provide a thread ID.
+    return "default"
 
 
-# ============================================================
-# DOCUMENTS
-# ============================================================
+# ---------------------------------------------------------------------------
+# Root / health
+# ---------------------------------------------------------------------------
 
-@app_api.get(
-    "/documents",
-)
-def get_documents():
-    """
-    Return all documents currently stored in the
-    local knowledge base.
-    """
 
+@api.get("/")
+def root() -> Dict[str, str]:
+    return {
+        "name": "Agentic Adaptive RAG API",
+        "status": "running",
+    }
+
+
+@api.get("/health")
+def health() -> Dict[str, Any]:
+    try:
+        documents = list_documents()
+
+        return {
+            "status": "healthy",
+            "documents": len(documents),
+            "evaluation_enabled": True,
+            "observability_enabled": True,
+        }
+
+    except Exception as exc:
+        return {
+            "status": "degraded",
+            "error": str(exc),
+            "evaluation_enabled": True,
+            "observability_enabled": True,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+
+
+@api.get("/documents")
+def get_documents() -> Dict[str, Any]:
     try:
         documents = list_documents()
 
@@ -415,124 +295,179 @@ def get_documents():
         }
 
     except Exception as exc:
-
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to list documents: {exc}",
-        ) from exc
+            detail=f"Failed to load documents: {exc}",
+        )
 
 
-@app_api.post(
-    "/documents/upload",
-)
-def upload_documents(
+@api.post("/upload")
+async def upload_documents(
     files: List[UploadFile] = File(...),
-):
-    """
-    Upload and ingest documents into the local
-    vector knowledge base.
-    """
+) -> Dict[str, Any]:
 
     if not files:
         raise HTTPException(
             status_code=400,
-            detail="No files were uploaded.",
+            detail="No files were provided.",
         )
 
-    if len(files) > 5:
+    uploaded: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = []
+
+    temp_paths: List[str] = []
+
+    try:
+        for uploaded_file in files:
+
+            filename = uploaded_file.filename or ""
+
+            if not filename:
+                rejected.append(
+                    {
+                        "file_name": filename,
+                        "reason": "Missing filename.",
+                    }
+                )
+                continue
+
+            extension = Path(
+                filename
+            ).suffix.lower()
+
+            if extension not in SUPPORTED_EXTENSIONS:
+                rejected.append(
+                    {
+                        "file_name": filename,
+                        "reason": (
+                            "Unsupported file type. "
+                            f"Supported types: "
+                            f"{', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+                        ),
+                    }
+                )
+                continue
+
+            contents = await uploaded_file.read()
+
+            if len(contents) > MAX_UPLOAD_SIZE_BYTES:
+                rejected.append(
+                    {
+                        "file_name": filename,
+                        "reason": (
+                            f"File exceeds the "
+                            f"{MAX_UPLOAD_SIZE_MB} MB limit."
+                        ),
+                    }
+                )
+                continue
+
+            temp_dir = tempfile.mkdtemp(
+                prefix="agentic_rag_"
+            )
+
+            temp_path = os.path.join(
+                temp_dir,
+                Path(filename).name,
+            )
+
+            with open(
+                temp_path,
+                "wb",
+            ) as output_file:
+                output_file.write(contents)
+
+            temp_paths.append(temp_path)
+
+            uploaded.append(
+                {
+                    "file_name": filename,
+                    "temp_path": temp_path,
+                    "size_bytes": len(contents),
+                    "extension": extension,
+                }
+            )
+
+        if not uploaded:
+            return {
+                "message": "No files were uploaded.",
+                "uploaded": [],
+                "rejected": rejected,
+            }
+
+        build_vectorstore(
+            [
+                item["temp_path"]
+                for item in uploaded
+            ]
+        )
+
+        return {
+            "message": (
+                f"Successfully processed "
+                f"{len(uploaded)} file(s)."
+            ),
+            "uploaded": [
+                {
+                    "file_name": item["file_name"],
+                    "size_bytes": item["size_bytes"],
+                    "extension": item["extension"],
+                }
+                for item in uploaded
+            ],
+            "rejected": rejected,
+            "documents": list_documents(),
+        }
+
+    except Exception as exc:
+
         raise HTTPException(
-            status_code=400,
-            detail="Maximum 5 files per upload.",
+            status_code=500,
+            detail=f"Upload failed: {exc}",
         )
 
-    results = []
+    finally:
 
-    for upload in files:
+        # Remove temporary files after Chroma ingestion.
+        for temp_path in temp_paths:
 
-        path = save_uploaded_file(
-            upload
-        )
+            try:
+                temp_dir = os.path.dirname(
+                    temp_path
+                )
 
-        try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
-            result = ingest_file(
-                path
-            )
+                if os.path.isdir(temp_dir):
+                    shutil.rmtree(
+                        temp_dir,
+                        ignore_errors=True,
+                    )
 
-            results.append(
-                {
-                    "file_name": upload.filename,
-                    "status": "ingested",
-                    "result": result,
-                }
-            )
-
-        except ValueError as exc:
-
-            if path.exists():
-                path.unlink()
-
-            results.append(
-                {
-                    "file_name": upload.filename,
-                    "status": "skipped",
-                    "message": str(exc),
-                }
-            )
-
-        except Exception as exc:
-
-            if path.exists():
-                path.unlink()
-
-            results.append(
-                {
-                    "file_name": upload.filename,
-                    "status": "failed",
-                    "message": str(exc),
-                }
-            )
-
-    successful = sum(
-        item["status"] == "ingested"
-        for item in results
-    )
-
-    return {
-        "message": "Upload processing completed.",
-        "uploaded": successful,
-        "results": results,
-        "documents": list_documents(),
-    }
+            except Exception:
+                pass
 
 
-@app_api.delete(
-    "/documents/{document_id}",
-)
+@api.delete("/documents/{document_id}")
 def remove_document(
     document_id: str,
-):
-    """
-    Delete a document and all of its chunks
-    from the vector knowledge base.
-    """
+) -> Dict[str, Any]:
 
     try:
 
-        if not document_exists(
+        deleted = delete_document(
             document_id
-        ):
+        )
+
+        if not deleted:
             raise HTTPException(
                 status_code=404,
                 detail="Document not found.",
             )
 
-        delete_document(
-            document_id
-        )
-
         return {
-            "message": "Document deleted successfully.",
+            "message": "Document deleted.",
             "document_id": document_id,
         }
 
@@ -540,24 +475,21 @@ def remove_document(
         raise
 
     except Exception as exc:
-
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete document: {exc}",
-        ) from exc
+        )
 
 
-# ============================================================
-# CHAT
-# ============================================================
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
 
-@app_api.post(
-    "/chat",
-    response_model=ChatResponse,
-)
+
+@api.post("/chat")
 def chat(
     request: ChatRequest,
-):
+) -> Dict[str, Any]:
 
     question = request.question.strip()
 
@@ -567,330 +499,470 @@ def chat(
             detail="Question cannot be empty.",
         )
 
-    # --------------------------------------------------------
-    # Early security validation
-    # --------------------------------------------------------
-
-    security_result = check_prompt(
-        question
-    )
-
-    if not security_result.allowed:
-
-        return ChatResponse(
-            status="blocked",
-
-            answer=(
-                "I can't process this request because "
-                "it contains patterns associated with "
-                "prompt-injection or instruction-override attacks."
-            ),
-
-            route="security_blocked",
-
-            sources=[],
-
-            thread_id="",
-
-            approval_required=False,
-
-            security_status="blocked",
-
-            security_reason=security_result.reason,
-
-            security_event="prompt_injection_detected",
-
-            security_redactions=0,
-        )
-
-    # --------------------------------------------------------
-    # Create HITL thread
-    # --------------------------------------------------------
-
-    thread_id = str(
-        uuid.uuid4()
-    )
-
-    config = get_graph_config(
-        thread_id
+    thread_id = _get_thread_id(
+        request.thread_id
     )
 
     observer = RunObserver(
         question=question
     )
 
+    start_time = perf_counter()
+
     try:
 
-        result = app.invoke(
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        result = rag_app.invoke(
             {
                 "question": question,
-                "retry_count": 0,
             },
             config=config,
         )
 
-        # ----------------------------------------------------
-        # HITL interrupt
-        # ----------------------------------------------------
-
-        interrupt_data = extract_interrupt(
-            result
+        latency = (
+            perf_counter() - start_time
         )
 
-        if interrupt_data:
+        result = dict(result or {})
 
-            return ChatResponse(
-                status="approval_required",
+        # ---------------------------------------------------------------
+        # HITL interrupt handling
+        # ---------------------------------------------------------------
 
-                answer="",
+        if "__interrupt__" in result:
 
-                route="web",
+            interrupts = result.get(
+                "__interrupt__"
+            ) or []
 
-                sources=[],
+            interrupt_value: Any = None
 
-                metrics=None,
+            if interrupts:
+                first_interrupt = interrupts[0]
 
-                thread_id=thread_id,
+                interrupt_value = getattr(
+                    first_interrupt,
+                    "value",
+                    first_interrupt,
+                )
 
-                approval_required=True,
-
-                approval_type=interrupt_data.get(
-                    "type",
-                    "human_approval",
-                ),
-
-                approval_title=interrupt_data.get(
-                    "title",
-                    "Approval required",
-                ),
-
-                approval_message=interrupt_data.get(
-                    "message",
-                    "Human approval is required to continue.",
-                ),
-
-                security_status=result.get(
-                    "security_status",
-                    "passed",
-                ),
-
-                security_reason=result.get(
-                    "security_reason",
-                    "",
-                ),
-
-                security_event=result.get(
-                    "security_event",
-                    "",
-                ),
-
-                security_redactions=result.get(
-                    "security_redactions",
-                    0,
-                ),
+            observer.finish(
+                result=result,
+                latency_seconds=latency,
             )
 
-        # ----------------------------------------------------
-        # Completed normally
-        # ----------------------------------------------------
+            # We deliberately don't treat an interrupted request as
+            # a completed evaluation yet.
+            return {
+                "status": "approval_required",
+                "thread_id": thread_id,
+                "question": question,
+                "interrupt": interrupt_value,
+                "hitl_status": "pending",
+                "message": (
+                    "The agent wants to use "
+                    "web search. Approval required."
+                ),
+            }
 
-        observation = observer.finish(
-            result
-        )
+        # ---------------------------------------------------------------
+        # Normal completed request
+        # ---------------------------------------------------------------
 
-        return build_chat_response(
+        observer.finish(
             result=result,
-            thread_id=thread_id,
-            latency_seconds=observation.get(
-                "latency_seconds",
-                0.0,
-            ),
+            latency_seconds=latency,
         )
+
+        _record_evaluation(
+            question=question,
+            result=result,
+            latency_seconds=latency,
+        )
+
+        return {
+            "status": "completed",
+            "thread_id": thread_id,
+            "question": question,
+            "answer": _safe_str(
+                result.get(
+                    "answer",
+                    result.get(
+                        "generation",
+                        "",
+                    ),
+                )
+            ),
+            "generation": _safe_str(
+                result.get(
+                    "generation",
+                    "",
+                )
+            ),
+            "route": _normalise_route(
+                result
+            ),
+            "sources": result.get(
+                "sources",
+                [],
+            ) or [],
+            "retrieved_documents": _safe_int(
+                result.get(
+                    "retrieved_documents",
+                    len(
+                        result.get(
+                            "documents",
+                            [],
+                        )
+                        or []
+                    ),
+                )
+            ),
+            "relevant_documents": _safe_int(
+                result.get(
+                    "relevant_documents",
+                    0,
+                )
+            ),
+            "grounded": _safe_bool(
+                result.get(
+                    "grounded",
+                    False,
+                )
+            ),
+            "answers_question": _safe_bool(
+                result.get(
+                    "answers_question",
+                    False,
+                )
+            ),
+            "retry_count": _safe_int(
+                result.get(
+                    "retry_count",
+                    0,
+                )
+            ),
+            "latency_seconds": round(
+                latency,
+                4,
+            ),
+            "hitl_status": result.get(
+                "hitl_status"
+            ),
+            "hitl_reason": result.get(
+                "hitl_reason"
+            ),
+            "security_status": result.get(
+                "security_status"
+            ),
+            "security_reason": result.get(
+                "security_reason"
+            ),
+            "security_redactions": result.get(
+                "security_redactions",
+                [],
+            ),
+        }
 
     except Exception as exc:
 
-        observer.fail(
-            exc
+        latency = (
+            perf_counter() - start_time
         )
+
+        error_message = str(exc)
+
+        # Record failed requests as evaluation results.
+        _record_evaluation(
+            question=question,
+            result={},
+            latency_seconds=latency,
+            error=error_message,
+        )
+
+        try:
+            observer.fail(
+                error_message,
+                latency_seconds=latency,
+            )
+        except Exception:
+            pass
 
         raise HTTPException(
             status_code=500,
-            detail=f"RAG execution failed: {exc}",
-        ) from exc
-
-
-# ============================================================
-# HITL WEB SEARCH APPROVAL
-# ============================================================
-
-@app_api.post(
-    "/chat/{thread_id}/web-search",
-    response_model=ChatResponse,
-)
-def web_search_decision(
-    thread_id: str,
-    request: WebSearchApprovalRequest,
-):
-
-    from langgraph.types import Command
-
-    config = get_graph_config(
-        thread_id
-    )
-
-    observer = RunObserver(
-        question=(
-            f"HITL web-search decision "
-            f"for thread {thread_id}"
+            detail=error_message,
         )
-    )
+
+
+# ---------------------------------------------------------------------------
+# HITL approval
+# ---------------------------------------------------------------------------
+
+
+@api.post("/chat/approval")
+def chat_approval(
+    request: HITLRequest,
+) -> Dict[str, Any]:
+
+    thread_id = request.thread_id
+
+    if not thread_id:
+        raise HTTPException(
+            status_code=400,
+            detail="thread_id is required.",
+        )
+
+    start_time = perf_counter()
 
     try:
 
-        result = app.invoke(
-            Command(
-                resume=request.approved
-            ),
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        result = rag_app.invoke(
+            {
+                "web_search_approved": request.approved,
+                "hitl_status": (
+                    "approved"
+                    if request.approved
+                    else "rejected"
+                ),
+            },
             config=config,
         )
 
-        # ----------------------------------------------------
-        # Another interrupt should not normally occur, but
-        # handle it safely if the graph asks again.
-        # ----------------------------------------------------
-
-        interrupt_data = extract_interrupt(
-            result
+        latency = (
+            perf_counter() - start_time
         )
 
-        if interrupt_data:
+        result = dict(result or {})
 
-            return ChatResponse(
-                status="approval_required",
-
-                answer="",
-
-                route="web",
-
-                thread_id=thread_id,
-
-                approval_required=True,
-
-                approval_type=interrupt_data.get(
-                    "type",
-                    "human_approval",
-                ),
-
-                approval_title=interrupt_data.get(
-                    "title",
-                    "Approval required",
-                ),
-
-                approval_message=interrupt_data.get(
-                    "message",
-                    "Human approval is required.",
-                ),
+        question = _safe_str(
+            result.get(
+                "question",
+                "",
             )
-
-        observation = observer.finish(
-            result
         )
 
-        return build_chat_response(
+        observer = RunObserver(
+            question=question
+        )
+
+        observer.finish(
             result=result,
-            thread_id=thread_id,
-            latency_seconds=observation.get(
-                "latency_seconds",
-                0.0,
-            ),
+            latency_seconds=latency,
         )
+
+        # Only record a completed answer.
+        _record_evaluation(
+            question=question,
+            result=result,
+            latency_seconds=latency,
+        )
+
+        return {
+            "status": "completed",
+            "thread_id": thread_id,
+            "question": question,
+            "answer": _safe_str(
+                result.get(
+                    "answer",
+                    result.get(
+                        "generation",
+                        "",
+                    ),
+                )
+            ),
+            "generation": _safe_str(
+                result.get(
+                    "generation",
+                    "",
+                )
+            ),
+            "route": _normalise_route(
+                result
+            ),
+            "sources": result.get(
+                "sources",
+                [],
+            ) or [],
+            "retrieved_documents": _safe_int(
+                result.get(
+                    "retrieved_documents",
+                    len(
+                        result.get(
+                            "documents",
+                            [],
+                        )
+                        or []
+                    ),
+                )
+            ),
+            "relevant_documents": _safe_int(
+                result.get(
+                    "relevant_documents",
+                    0,
+                )
+            ),
+            "grounded": _safe_bool(
+                result.get(
+                    "grounded",
+                    False,
+                )
+            ),
+            "answers_question": _safe_bool(
+                result.get(
+                    "answers_question",
+                    False,
+                )
+            ),
+            "retry_count": _safe_int(
+                result.get(
+                    "retry_count",
+                    0,
+                )
+            ),
+            "latency_seconds": round(
+                latency,
+                4,
+            ),
+            "hitl_status": result.get(
+                "hitl_status"
+            ),
+            "hitl_reason": result.get(
+                "hitl_reason"
+            ),
+            "security_status": result.get(
+                "security_status"
+            ),
+            "security_reason": result.get(
+                "security_reason"
+            ),
+            "security_redactions": result.get(
+                "security_redactions",
+                [],
+            ),
+        }
 
     except Exception as exc:
 
-        observer.fail(
-            exc
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
         )
+
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+
+@api.get("/evaluation")
+def get_evaluation() -> Dict[str, Any]:
+
+    try:
+
+        tracker = EvaluationTracker()
+
+        return {
+            "results": [
+                result.to_dict()
+                for result in tracker.results
+            ],
+            "summary": tracker.summary(),
+        }
+
+    except Exception as exc:
 
         raise HTTPException(
             status_code=500,
             detail=(
-                f"Failed to resume RAG execution: {exc}"
+                "Failed to load evaluation history: "
+                f"{exc}"
             ),
-        ) from exc
+        )
 
 
-# ============================================================
-# OBSERVABILITY
-# ============================================================
+@api.delete("/evaluation")
+def clear_evaluation() -> Dict[str, str]:
 
-@app_api.get(
-    "/observability",
-)
-def get_observability():
+    try:
 
-    observations = load_observations()
+        tracker = EvaluationTracker()
+        tracker.clear()
 
-    return {
-        "summary": summarize_observations(
-            observations
-        ),
-        "runs": observations,
-    }
+        return {
+            "message": (
+                "Evaluation history cleared."
+            )
+        }
 
+    except Exception as exc:
 
-@app_api.get(
-    "/observability/summary",
-)
-def get_observability_summary():
-
-    observations = load_observations()
-
-    return summarize_observations(
-        observations
-    )
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to clear evaluation history: "
+                f"{exc}"
+            ),
+        )
 
 
-@app_api.get(
-    "/observability/runs",
-)
-def get_observability_runs():
-
-    return {
-        "runs": load_observations()
-    }
+# ---------------------------------------------------------------------------
+# Observability
+# ---------------------------------------------------------------------------
 
 
-@app_api.delete(
-    "/observability",
-)
-def clear_observability():
+@api.get("/observability")
+def get_observability() -> Dict[str, Any]:
 
-    from observability import OBSERVABILITY_FILE
+    try:
 
-    if OBSERVABILITY_FILE.exists():
-        OBSERVABILITY_FILE.unlink()
+        history = load_observability_history()
 
-    return {
-        "message": "Observability history cleared.",
-    }
+        return {
+            "runs": history,
+            "summary": get_observability_summary(),
+        }
 
+    except Exception as exc:
 
-# ============================================================
-# ROOT
-# ============================================================
-
-@app_api.get("/")
-def root():
-
-    return {
-        "name": "Agentic Adaptive RAG API",
-        "status": "running",
-        "docs": "/docs",
-    }
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to load observability history: "
+                f"{exc}"
+            ),
+        )
 
 
-# ============================================================
-# ASGI APPLICATION
-# ============================================================
+@api.delete("/observability")
+def clear_observability() -> Dict[str, str]:
 
-app = app_api
+    try:
+
+        clear_observability_history()
+
+        return {
+            "message": (
+                "Observability history cleared."
+            )
+        }
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to clear observability history: "
+                f"{exc}"
+            ),
+        )
