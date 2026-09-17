@@ -2,8 +2,13 @@ from typing import List
 
 from langchain_core.documents import Document
 
+from security.content_guard import (
+    wrap_untrusted_content,
+)
+
 
 DEFAULT_MAX_CHARS = 6000
+
 DEFAULT_MAX_CHARS_PER_DOCUMENT = 2000
 
 
@@ -13,38 +18,69 @@ def format_documents(
     max_chars_per_document: int = DEFAULT_MAX_CHARS_PER_DOCUMENT,
 ) -> str:
     """
-    Convert retrieved documents into a compact text context.
+    Format retrieved documents as explicitly untrusted content.
 
-    Limits are applied both per document and across the complete
-    context to reduce unnecessary LLM token usage.
+    Retrieved documents are treated as data/evidence and never
+    as executable instructions.
     """
 
     if not documents:
         return ""
 
     context_parts = []
+
     total_chars = 0
 
-    for index, document in enumerate(documents, start=1):
-
+    for index, document in enumerate(
+        documents,
+        start=1,
+    ):
         content = document.page_content.strip()
 
         if not content:
             continue
 
-        content = content[:max_chars_per_document]
+        content = content[
+            :max_chars_per_document
+        ]
 
-        remaining_chars = max_chars - total_chars
+        remaining_chars = (
+            max_chars - total_chars
+        )
 
         if remaining_chars <= 0:
             break
 
-        content = content[:remaining_chars]
+        content = content[
+            :remaining_chars
+        ]
 
-        context_parts.append(
-            f"[Document {index}]\n{content}"
+        metadata = document.metadata or {}
+
+        source_type = (
+            "web"
+            if metadata.get("source") == "web"
+            else "document"
         )
 
-        total_chars += len(content)
+        source_name = (
+            metadata.get("title")
+            or metadata.get("file_name")
+            or metadata.get("source")
+            or f"Document {index}"
+        )
+
+        wrapped_content = wrap_untrusted_content(
+            content=content,
+            source_type=source_type,
+            source_name=str(source_name),
+        )
+
+        context_parts.append(
+            f"[Retrieved Evidence {index}]\n"
+            f"{wrapped_content}"
+        )
+
+        total_chars += len(wrapped_content)
 
     return "\n\n".join(context_parts)
