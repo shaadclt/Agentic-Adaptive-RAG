@@ -18,7 +18,7 @@ from config import (
     CHUNK_SIZE,
     SUPPORTED_EXTENSIONS,
 )
-from backend.model import embed_model
+from model import embed_model
 
 
 def get_vectorstore() -> Chroma:
