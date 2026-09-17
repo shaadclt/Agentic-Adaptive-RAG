@@ -4,48 +4,44 @@ from pydantic import BaseModel, Field
 
 
 class Source(BaseModel):
-    """A source used to support an answer."""
-
     type: str = Field(
         description="Source type, either local or web."
     )
 
     title: str = Field(
         default="",
-        description="Human-readable source title."
+        description="Human-readable source title.",
     )
 
     file_name: str = Field(
         default="",
-        description="Local document filename."
+        description="Local document filename.",
     )
 
     url: str = Field(
         default="",
-        description="Web source URL."
+        description="Web source URL.",
     )
 
     source: str = Field(
         default="",
-        description="Original local source path."
+        description="Original local source path.",
     )
 
     document_id: str = Field(
         default="",
-        description="Unique local document identifier."
+        description="Unique local document identifier.",
     )
 
 
 class RAGResponse(BaseModel):
-    """Structured response returned by the RAG application."""
-
     answer: str = Field(
         description="Generated answer to the user's question."
     )
 
     sources: List[Source] = Field(
         default_factory=list,
-        description="Sources used to generate the answer."
+        description="Sources used to generate the answer.",
     )
 
     route: str = Field(
@@ -54,7 +50,27 @@ class RAGResponse(BaseModel):
 
     retry_count: int = Field(
         default=0,
-        description="Number of generation retries."
+        description="Number of generation retries.",
+    )
+
+    security_status: str = Field(
+        default="passed",
+        description="Security status of the request.",
+    )
+
+    security_reason: str = Field(
+        default="",
+        description="Security decision explanation.",
+    )
+
+    security_event: str = Field(
+        default="",
+        description="Security event generated during the run.",
+    )
+
+    security_redactions: int = Field(
+        default=0,
+        description="Number of output security redactions.",
     )
 
 
@@ -63,8 +79,11 @@ def create_response(
     sources: List[Dict[str, Any]],
     route: str,
     retry_count: int,
+    security_status: str = "passed",
+    security_reason: str = "",
+    security_event: str = "",
+    security_redactions: int = 0,
 ) -> RAGResponse:
-    """Create a validated structured RAG response."""
 
     return RAGResponse(
         answer=answer,
@@ -74,4 +93,8 @@ def create_response(
         ],
         route=route,
         retry_count=retry_count,
+        security_status=security_status,
+        security_reason=security_reason,
+        security_event=security_event,
+        security_redactions=security_redactions,
     )
