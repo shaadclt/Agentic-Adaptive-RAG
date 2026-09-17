@@ -2,7 +2,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableSequence
 from pydantic import BaseModel, Field
 
-from backend.model import llm_model
+from model import llm_model
 
 
 llm = llm_model
