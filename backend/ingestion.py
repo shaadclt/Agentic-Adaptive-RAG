@@ -11,7 +11,7 @@ from langchain_community.document_loaders import (
     TextLoader,
 )
 
-from backend.config import (
+from config import (
     CHROMA_PATH,
     COLLECTION_NAME,
     CHUNK_OVERLAP,
