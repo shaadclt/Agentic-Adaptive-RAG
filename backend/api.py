@@ -23,7 +23,7 @@ from ingestion import (
     list_documents,
 )
 
-from backend.observability import (
+from observability import (
     RunObserver,
     OBSERVABILITY_FILE,
     load_observability_history,
