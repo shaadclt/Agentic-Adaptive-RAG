@@ -765,6 +765,14 @@ export default function Home() {
 
               </Link>
 
+              <Link
+                  href="/evaluation"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.05] hover:text-white"
+                >
+                  <span>▣</span>
+                  <span>Evaluation</span>
+                </Link>
+
             </div>
 
           </div>
