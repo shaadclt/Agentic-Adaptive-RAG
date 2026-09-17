@@ -1,7 +1,9 @@
+from __future__ import annotations
+
+import shutil
+import uuid
 from pathlib import Path
-from time import perf_counter
 from typing import Any, Dict, List
-from uuid import uuid4
 
 from fastapi import (
     FastAPI,
@@ -9,50 +11,59 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
-from fastapi.middleware.cors import (
-    CORSMiddleware,
-)
-from langgraph.types import Command
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from evaluation import (
-    EvaluationResult,
-    EvaluationTracker,
-)
-
+from evaluation import EvaluationResult, EvaluationTracker
 from graph.graph import app
-
 from ingestion import (
-    build_vectorstore,
     delete_document,
+    document_exists,
+    get_files_from_directory,
+    ingest_file,
     list_documents,
 )
-
 from observability import (
-    OBSERVABILITY_FILE,
     RunObserver,
     load_observations,
     summarize_observations,
 )
+from response import Source
+from security.prompt_guard import check_prompt
 
-from sources import extract_sources
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+UPLOAD_DIR = Path("./uploads")
+
+UPLOAD_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
 
-api = FastAPI(
+# ============================================================
+# FASTAPI
+# ============================================================
+
+app_api = FastAPI(
     title="Agentic Adaptive RAG API",
     description=(
-        "Production-oriented Agentic RAG API "
-        "powered by LangGraph."
+        "Production-oriented Agentic RAG API with "
+        "adaptive routing, HITL web-search approval, "
+        "security controls, evaluation, and observability."
     ),
     version="1.0.0",
 )
 
 
-# ---------------------------------------------------------------------------
+# ============================================================
 # CORS
-# ---------------------------------------------------------------------------
+# ============================================================
 
-api.add_middleware(
+app_api.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
@@ -64,29 +75,24 @@ api.add_middleware(
 )
 
 
-# ---------------------------------------------------------------------------
-# Evaluation
-# ---------------------------------------------------------------------------
-
-evaluation_tracker = EvaluationTracker()
-
-
-# ---------------------------------------------------------------------------
-# Models
-# ---------------------------------------------------------------------------
+# ============================================================
+# MODELS
+# ============================================================
 
 class ChatRequest(BaseModel):
     question: str = Field(
         ...,
         min_length=1,
-        description=(
-            "Question to ask the RAG agent."
-        ),
+        max_length=4000,
     )
 
 
+class WebSearchApprovalRequest(BaseModel):
+    approved: bool
+
+
 class SourceResponse(BaseModel):
-    type: str
+    type: str = ""
     title: str = ""
     file_name: str = ""
     url: str = ""
@@ -95,18 +101,19 @@ class SourceResponse(BaseModel):
 
 
 class MetricsResponse(BaseModel):
-    retrieved_documents: int
-    relevant_documents: int
-    grounded: bool
-    answers_question: bool
-    retry_count: int
-    latency_seconds: float
+    retrieved_documents: int = 0
+    relevant_documents: int = 0
+    grounded: bool = False
+    answers_question: bool = False
+    retry_count: int = 0
+    latency_seconds: float = 0.0
 
 
 class ChatResponse(BaseModel):
     status: str = "completed"
 
     answer: str = ""
+
     route: str = ""
 
     sources: List[SourceResponse] = Field(
@@ -125,198 +132,45 @@ class ChatResponse(BaseModel):
 
     approval_message: str = ""
 
+    # Security
+    security_status: str = "passed"
 
-class WebSearchApprovalRequest(BaseModel):
-    approved: bool
+    security_reason: str = ""
+
+    security_event: str = ""
+
+    security_redactions: int = 0
 
 
 class DocumentResponse(BaseModel):
-    file_name: str
-    file_type: str
     document_id: str
-    source: str
+    file_name: str
+    file_type: str = ""
+    source: str = ""
+    chunk_count: int = 0
 
 
-# ---------------------------------------------------------------------------
-# Health
-# ---------------------------------------------------------------------------
-
-@api.get("/health")
-def health() -> Dict[str, str]:
-
-    return {
-        "status": "healthy",
-        "service": "agentic-adaptive-rag",
-    }
+class HealthResponse(BaseModel):
+    status: str
+    documents: int
+    version: str
 
 
-# ---------------------------------------------------------------------------
-# Documents
-# ---------------------------------------------------------------------------
+# ============================================================
+# HELPERS
+# ============================================================
 
-@api.get(
-    "/documents",
-    response_model=List[DocumentResponse],
-)
-def get_documents() -> List[Dict[str, Any]]:
-
-    return list_documents()
-
-
-@api.post("/documents/upload")
-async def upload_documents(
-    files: List[UploadFile] = File(...),
+def get_graph_config(
+    thread_id: str,
 ) -> Dict[str, Any]:
-
-    supported_extensions = {
-        ".pdf",
-        ".docx",
-        ".txt",
-        ".md",
-    }
-
-    upload_path = Path(
-        "uploads"
-    )
-
-    upload_path.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    saved_files: List[str] = []
-
-    rejected_files: List[
-        Dict[str, str]
-    ] = []
-
-    for file in files:
-
-        if not file.filename:
-
-            rejected_files.append(
-                {
-                    "file_name": "unknown",
-                    "reason": (
-                        "Missing filename."
-                    ),
-                }
-            )
-
-            continue
-
-        suffix = Path(
-            file.filename
-        ).suffix.lower()
-
-        if suffix not in supported_extensions:
-
-            rejected_files.append(
-                {
-                    "file_name": file.filename,
-                    "reason": (
-                        "Unsupported file type."
-                    ),
-                }
-            )
-
-            continue
-
-        destination = (
-            upload_path
-            / Path(
-                file.filename
-            ).name
-        )
-
-        content = await file.read()
-
-        destination.write_bytes(
-            content
-        )
-
-        saved_files.append(
-            str(destination)
-        )
-
-    if not saved_files:
-
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": (
-                    "No supported files "
-                    "were uploaded."
-                ),
-                "rejected_files": (
-                    rejected_files
-                ),
-            },
-        )
-
-    try:
-
-        build_vectorstore(
-            saved_files
-        )
-
-    except Exception as exc:
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Document ingestion failed: "
-                f"{exc}"
-            ),
-        ) from exc
-
     return {
-        "message": (
-            "Documents processed "
-            "successfully."
-        ),
-        "uploaded_files": [
-            Path(path).name
-            for path in saved_files
-        ],
-        "rejected_files": (
-            rejected_files
-        ),
+        "configurable": {
+            "thread_id": thread_id,
+        }
     }
 
 
-@api.delete(
-    "/documents/{document_id}"
-)
-def remove_document(
-    document_id: str,
-) -> Dict[str, Any]:
-
-    deleted = delete_document(
-        document_id
-    )
-
-    if not deleted:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found.",
-        )
-
-    return {
-        "message": (
-            "Document removed "
-            "successfully."
-        ),
-        "document_id": document_id,
-    }
-
-
-# ---------------------------------------------------------------------------
-# HITL
-# ---------------------------------------------------------------------------
-
-def extract_interrupt_payload(
+def extract_interrupt(
     result: Dict[str, Any],
 ) -> Dict[str, Any] | None:
 
@@ -329,155 +183,441 @@ def extract_interrupt_payload(
 
     first_interrupt = interrupts[0]
 
-    payload = getattr(
+    value = getattr(
         first_interrupt,
         "value",
-        first_interrupt,
+        None,
     )
 
     if isinstance(
-        payload,
+        value,
         dict,
     ):
-        return payload
+        return value
 
     return {
-        "type": "approval",
+        "type": "human_approval",
         "title": "Approval required",
-        "message": str(payload),
+        "message": "Human approval is required to continue.",
     }
 
-
-# ---------------------------------------------------------------------------
-# Response Builder
-# ---------------------------------------------------------------------------
 
 def build_chat_response(
     result: Dict[str, Any],
     thread_id: str,
-    latency: float,
+    latency_seconds: float,
 ) -> ChatResponse:
 
-    answer = result.get(
-        "answer",
-        result.get(
-            "generation",
-            "No answer generated.",
-        ),
+    raw_sources = result.get(
+        "sources",
+        [],
     )
 
-    sources = result.get(
-        "sources"
-    )
+    sources = []
 
-    if sources is None:
-
-        sources = extract_sources(
-            result.get(
-                "documents",
-                [],
+    for source in raw_sources:
+        if isinstance(
+            source,
+            dict,
+        ):
+            sources.append(
+                SourceResponse(
+                    **{
+                        key: source.get(
+                            key,
+                            "",
+                        )
+                        for key in SourceResponse.model_fields
+                    }
+                )
             )
-        )
-
-    route = result.get(
-        "route",
-        "unknown",
-    )
-
-    retry_count = result.get(
-        "retry_count",
-        0,
-    )
-
-    retrieved_documents = result.get(
-        "retrieved_documents",
-        0,
-    )
-
-    relevant_documents = result.get(
-        "relevant_documents",
-        0,
-    )
-
-    grounded = result.get(
-        "grounded",
-        False,
-    )
-
-    answers_question = result.get(
-        "answers_question",
-        False,
-    )
 
     metrics = MetricsResponse(
-        retrieved_documents=(
-            retrieved_documents
+        retrieved_documents=result.get(
+            "retrieved_documents",
+            0,
         ),
-        relevant_documents=(
-            relevant_documents
+        relevant_documents=result.get(
+            "relevant_documents",
+            0,
         ),
-        grounded=grounded,
-        answers_question=(
-            answers_question
+        grounded=result.get(
+            "grounded",
+            False,
         ),
-        retry_count=retry_count,
+        answers_question=result.get(
+            "answers_question",
+            False,
+        ),
+        retry_count=result.get(
+            "retry_count",
+            0,
+        ),
         latency_seconds=round(
-            latency,
+            latency_seconds,
             4,
         ),
     )
 
     return ChatResponse(
         status="completed",
-        answer=answer,
-        route=route,
-        sources=[
-            SourceResponse(**source)
-            for source in sources
-        ],
+
+        answer=result.get(
+            "answer",
+            result.get(
+                "generation",
+                "",
+            ),
+        ),
+
+        route=result.get(
+            "route",
+            "",
+        ),
+
+        sources=sources,
+
         metrics=metrics,
+
         thread_id=thread_id,
+
+        security_status=result.get(
+            "security_status",
+            "passed",
+        ),
+
+        security_reason=result.get(
+            "security_reason",
+            "",
+        ),
+
+        security_event=result.get(
+            "security_event",
+            "",
+        ),
+
+        security_redactions=result.get(
+            "security_redactions",
+            0,
+        ),
+
+        approval_required=False,
     )
 
 
-# ---------------------------------------------------------------------------
-# Chat
-# ---------------------------------------------------------------------------
+def save_uploaded_file(
+    upload: UploadFile,
+) -> Path:
 
-@api.post(
+    if not upload.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded file must have a filename.",
+        )
+
+    original_name = Path(
+        upload.filename
+    ).name
+
+    extension = Path(
+        original_name
+    ).suffix.lower()
+
+    allowed_extensions = {
+        ".pdf",
+        ".docx",
+        ".txt",
+        ".md",
+    }
+
+    if extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported file type. "
+                "Supported types: PDF, DOCX, TXT, MD."
+            ),
+        )
+
+    safe_name = (
+        f"{uuid.uuid4().hex}"
+        f"_{original_name}"
+    )
+
+    destination = (
+        UPLOAD_DIR
+        / safe_name
+    )
+
+    try:
+        with destination.open(
+            "wb"
+        ) as output:
+
+            shutil.copyfileobj(
+                upload.file,
+                output,
+            )
+
+    except Exception as exc:
+
+        if destination.exists():
+            destination.unlink()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to save uploaded file: {exc}"
+            ),
+        ) from exc
+
+    return destination
+
+
+# ============================================================
+# HEALTH
+# ============================================================
+
+@app_api.get(
+    "/health",
+    response_model=HealthResponse,
+)
+def health() -> HealthResponse:
+
+    documents = list_documents()
+
+    return HealthResponse(
+        status="ok",
+        documents=len(documents),
+        version="1.0.0",
+    )
+
+
+# ============================================================
+# DOCUMENTS
+# ============================================================
+
+@app_api.get(
+    "/documents",
+)
+def get_documents():
+    """
+    Return all documents currently stored in the
+    local knowledge base.
+    """
+
+    try:
+        documents = list_documents()
+
+        return {
+            "documents": documents,
+            "count": len(documents),
+        }
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list documents: {exc}",
+        ) from exc
+
+
+@app_api.post(
+    "/documents/upload",
+)
+def upload_documents(
+    files: List[UploadFile] = File(...),
+):
+    """
+    Upload and ingest documents into the local
+    vector knowledge base.
+    """
+
+    if not files:
+        raise HTTPException(
+            status_code=400,
+            detail="No files were uploaded.",
+        )
+
+    if len(files) > 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 5 files per upload.",
+        )
+
+    results = []
+
+    for upload in files:
+
+        path = save_uploaded_file(
+            upload
+        )
+
+        try:
+
+            result = ingest_file(
+                path
+            )
+
+            results.append(
+                {
+                    "file_name": upload.filename,
+                    "status": "ingested",
+                    "result": result,
+                }
+            )
+
+        except ValueError as exc:
+
+            if path.exists():
+                path.unlink()
+
+            results.append(
+                {
+                    "file_name": upload.filename,
+                    "status": "skipped",
+                    "message": str(exc),
+                }
+            )
+
+        except Exception as exc:
+
+            if path.exists():
+                path.unlink()
+
+            results.append(
+                {
+                    "file_name": upload.filename,
+                    "status": "failed",
+                    "message": str(exc),
+                }
+            )
+
+    successful = sum(
+        item["status"] == "ingested"
+        for item in results
+    )
+
+    return {
+        "message": "Upload processing completed.",
+        "uploaded": successful,
+        "results": results,
+        "documents": list_documents(),
+    }
+
+
+@app_api.delete(
+    "/documents/{document_id}",
+)
+def remove_document(
+    document_id: str,
+):
+    """
+    Delete a document and all of its chunks
+    from the vector knowledge base.
+    """
+
+    try:
+
+        if not document_exists(
+            document_id
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found.",
+            )
+
+        delete_document(
+            document_id
+        )
+
+        return {
+            "message": "Document deleted successfully.",
+            "document_id": document_id,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete document: {exc}",
+        ) from exc
+
+
+# ============================================================
+# CHAT
+# ============================================================
+
+@app_api.post(
     "/chat",
     response_model=ChatResponse,
 )
 def chat(
     request: ChatRequest,
-) -> ChatResponse:
+):
 
     question = request.question.strip()
 
     if not question:
-
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Question cannot be empty."
-            ),
+            detail="Question cannot be empty.",
         )
 
-    thread_id = str(
-        uuid4()
+    # --------------------------------------------------------
+    # Early security validation
+    # --------------------------------------------------------
+
+    security_result = check_prompt(
+        question
     )
 
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-        }
-    }
+    if not security_result.allowed:
+
+        return ChatResponse(
+            status="blocked",
+
+            answer=(
+                "I can't process this request because "
+                "it contains patterns associated with "
+                "prompt-injection or instruction-override attacks."
+            ),
+
+            route="security_blocked",
+
+            sources=[],
+
+            thread_id="",
+
+            approval_required=False,
+
+            security_status="blocked",
+
+            security_reason=security_result.reason,
+
+            security_event="prompt_injection_detected",
+
+            security_redactions=0,
+        )
+
+    # --------------------------------------------------------
+    # Create HITL thread
+    # --------------------------------------------------------
+
+    thread_id = str(
+        uuid.uuid4()
+    )
+
+    config = get_graph_config(
+        thread_id
+    )
 
     observer = RunObserver(
         question=question
     )
-
-    start_time = perf_counter()
 
     try:
 
@@ -486,56 +626,183 @@ def chat(
                 "question": question,
                 "retry_count": 0,
             },
-            config,
+            config=config,
         )
 
-        latency = (
-            perf_counter()
-            - start_time
-        )
-
-        # ---------------------------------------------------------------
+        # ----------------------------------------------------
         # HITL interrupt
-        # ---------------------------------------------------------------
+        # ----------------------------------------------------
 
-        interrupt_payload = (
-            extract_interrupt_payload(
-                result
-            )
+        interrupt_data = extract_interrupt(
+            result
         )
 
-        if interrupt_payload:
-
-            print(
-                "---HUMAN APPROVAL REQUIRED---"
-            )
+        if interrupt_data:
 
             return ChatResponse(
                 status="approval_required",
+
+                answer="",
+
+                route="web",
+
+                sources=[],
+
+                metrics=None,
+
                 thread_id=thread_id,
+
                 approval_required=True,
-                approval_type=(
-                    interrupt_payload.get(
-                        "type",
-                        "approval",
-                    )
+
+                approval_type=interrupt_data.get(
+                    "type",
+                    "human_approval",
                 ),
-                approval_title=(
-                    interrupt_payload.get(
-                        "title",
-                        "Approval required",
-                    )
+
+                approval_title=interrupt_data.get(
+                    "title",
+                    "Approval required",
                 ),
-                approval_message=(
-                    interrupt_payload.get(
-                        "message",
-                        "",
-                    )
+
+                approval_message=interrupt_data.get(
+                    "message",
+                    "Human approval is required to continue.",
+                ),
+
+                security_status=result.get(
+                    "security_status",
+                    "passed",
+                ),
+
+                security_reason=result.get(
+                    "security_reason",
+                    "",
+                ),
+
+                security_event=result.get(
+                    "security_event",
+                    "",
+                ),
+
+                security_redactions=result.get(
+                    "security_redactions",
+                    0,
                 ),
             )
 
-        observer.finish(
+        # ----------------------------------------------------
+        # Completed normally
+        # ----------------------------------------------------
+
+        observation = observer.finish(
             result
+        )
+
+        return build_chat_response(
+            result=result,
+            thread_id=thread_id,
+            latency_seconds=observation.get(
+                "latency_seconds",
+                0.0,
+            ),
+        )
+
+    except Exception as exc:
+
+        observer.fail(
+            exc
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"RAG execution failed: {exc}",
+        ) from exc
+
+
+# ============================================================
+# HITL WEB SEARCH APPROVAL
+# ============================================================
+
+@app_api.post(
+    "/chat/{thread_id}/web-search",
+    response_model=ChatResponse,
+)
+def web_search_decision(
+    thread_id: str,
+    request: WebSearchApprovalRequest,
+):
+
+    from langgraph.types import Command
+
+    config = get_graph_config(
+        thread_id
+    )
+
+    observer = RunObserver(
+        question=(
+            f"HITL web-search decision "
+            f"for thread {thread_id}"
+        )
+    )
+
+    try:
+
+        result = app.invoke(
+            Command(
+                resume=request.approved
+            ),
+            config=config,
+        )
+
+        # ----------------------------------------------------
+        # Another interrupt should not normally occur, but
+        # handle it safely if the graph asks again.
+        # ----------------------------------------------------
+
+        interrupt_data = extract_interrupt(
+            result
+        )
+
+        if interrupt_data:
+
+            return ChatResponse(
+                status="approval_required",
+
+                answer="",
+
+                route="web",
+
+                thread_id=thread_id,
+
+                approval_required=True,
+
+                approval_type=interrupt_data.get(
+                    "type",
+                    "human_approval",
+                ),
+
+                approval_title=interrupt_data.get(
+                    "title",
+                    "Approval required",
+                ),
+
+                approval_message=interrupt_data.get(
+                    "message",
+                    "Human approval is required.",
+                ),
+            )
+
+        observation = observer.finish(
+            result
+        )
+
+        return build_chat_response(
+            result=result,
+            thread_id=thread_id,
+            latency_seconds=observation.get(
+                "latency_seconds",
+                0.0,
+            ),
         )
 
     except Exception as exc:
@@ -547,310 +814,19 @@ def chat(
         raise HTTPException(
             status_code=500,
             detail=(
-                "RAG execution failed: "
-                f"{exc}"
+                f"Failed to resume RAG execution: {exc}"
             ),
         ) from exc
 
-    answer = result.get(
-        "answer",
-        result.get(
-            "generation",
-            "No answer generated.",
-        ),
-    )
 
-    sources = result.get(
-        "sources"
-    )
+# ============================================================
+# OBSERVABILITY
+# ============================================================
 
-    if sources is None:
-
-        sources = extract_sources(
-            result.get(
-                "documents",
-                [],
-            )
-        )
-
-    route = result.get(
-        "route",
-        "unknown",
-    )
-
-    retry_count = result.get(
-        "retry_count",
-        0,
-    )
-
-    retrieved_documents = result.get(
-        "retrieved_documents",
-        0,
-    )
-
-    relevant_documents = result.get(
-        "relevant_documents",
-        0,
-    )
-
-    grounded = result.get(
-        "grounded",
-        False,
-    )
-
-    answers_question = result.get(
-        "answers_question",
-        False,
-    )
-
-    evaluation_result = EvaluationResult(
-        question=question,
-        answer=answer,
-        route=route,
-        retrieved_documents=(
-            retrieved_documents
-        ),
-        relevant_documents=(
-            relevant_documents
-        ),
-        grounded=grounded,
-        answers_question=(
-            answers_question
-        ),
-        retry_count=retry_count,
-        latency_seconds=latency,
-        sources=sources,
-    )
-
-    evaluation_tracker.add(
-        evaluation_result
-    )
-
-    return build_chat_response(
-        result=result,
-        thread_id=thread_id,
-        latency=latency,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Web Search Approval / Rejection
-# ---------------------------------------------------------------------------
-
-@api.post(
-    "/chat/{thread_id}/web-search",
-    response_model=ChatResponse,
+@app_api.get(
+    "/observability",
 )
-def respond_to_web_search(
-    thread_id: str,
-    request: WebSearchApprovalRequest,
-) -> ChatResponse:
-
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-        }
-    }
-
-    start_time = perf_counter()
-
-    try:
-
-        result = app.invoke(
-            Command(
-                resume=request.approved
-            ),
-            config,
-        )
-
-    except Exception as exc:
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Failed to resume RAG execution: "
-                f"{exc}"
-            ),
-        ) from exc
-
-    latency = (
-        perf_counter()
-        - start_time
-    )
-
-    # ---------------------------------------------------------------
-    # Another interrupt
-    # ---------------------------------------------------------------
-
-    interrupt_payload = (
-        extract_interrupt_payload(
-            result
-        )
-    )
-
-    if interrupt_payload:
-
-        return ChatResponse(
-            status="approval_required",
-            thread_id=thread_id,
-            approval_required=True,
-            approval_type=(
-                interrupt_payload.get(
-                    "type",
-                    "approval",
-                )
-            ),
-            approval_title=(
-                interrupt_payload.get(
-                    "title",
-                    "Approval required",
-                )
-            ),
-            approval_message=(
-                interrupt_payload.get(
-                    "message",
-                    "",
-                )
-            ),
-        )
-
-    # ---------------------------------------------------------------
-    # Rejected
-    # ---------------------------------------------------------------
-
-    if not request.approved:
-
-        answer = result.get(
-            "answer",
-            result.get(
-                "generation",
-                (
-                    "I couldn't answer this "
-                    "confidently using the "
-                    "available local documents, "
-                    "and web search was not "
-                    "approved."
-                ),
-            ),
-        )
-
-        result["answer"] = answer
-        result["generation"] = answer
-        result["route"] = "web_rejected"
-        result["sources"] = []
-        result["grounded"] = False
-        result["answers_question"] = False
-
-        return build_chat_response(
-            result=result,
-            thread_id=thread_id,
-            latency=latency,
-        )
-
-    # ---------------------------------------------------------------
-    # Approved
-    # ---------------------------------------------------------------
-
-    question = result.get(
-        "question",
-        "",
-    )
-
-    observer = RunObserver(
-        question=question
-    )
-
-    observer.finish(
-        result
-    )
-
-    answer = result.get(
-        "answer",
-        result.get(
-            "generation",
-            "No answer generated.",
-        ),
-    )
-
-    sources = result.get(
-        "sources"
-    )
-
-    if sources is None:
-
-        sources = extract_sources(
-            result.get(
-                "documents",
-                [],
-            )
-        )
-
-    route = result.get(
-        "route",
-        "unknown",
-    )
-
-    retry_count = result.get(
-        "retry_count",
-        0,
-    )
-
-    retrieved_documents = result.get(
-        "retrieved_documents",
-        0,
-    )
-
-    relevant_documents = result.get(
-        "relevant_documents",
-        0,
-    )
-
-    grounded = result.get(
-        "grounded",
-        False,
-    )
-
-    answers_question = result.get(
-        "answers_question",
-        False,
-    )
-
-    evaluation_result = EvaluationResult(
-        question=question,
-        answer=answer,
-        route=route,
-        retrieved_documents=(
-            retrieved_documents
-        ),
-        relevant_documents=(
-            relevant_documents
-        ),
-        grounded=grounded,
-        answers_question=(
-            answers_question
-        ),
-        retry_count=retry_count,
-        latency_seconds=latency,
-        sources=sources,
-    )
-
-    evaluation_tracker.add(
-        evaluation_result
-    )
-
-    return build_chat_response(
-        result=result,
-        thread_id=thread_id,
-        latency=latency,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Observability
-# ---------------------------------------------------------------------------
-
-@api.get("/observability")
-def get_observability() -> Dict[str, Any]:
+def get_observability():
 
     observations = load_observations()
 
@@ -858,16 +834,14 @@ def get_observability() -> Dict[str, Any]:
         "summary": summarize_observations(
             observations
         ),
-        "total_records": len(
-            observations
-        ),
+        "runs": observations,
     }
 
 
-@api.get(
-    "/observability/summary"
+@app_api.get(
+    "/observability/summary",
 )
-def get_observability_summary() -> Dict[str, Any]:
+def get_observability_summary():
 
     observations = load_observations()
 
@@ -876,51 +850,47 @@ def get_observability_summary() -> Dict[str, Any]:
     )
 
 
-@api.get(
-    "/observability/runs"
+@app_api.get(
+    "/observability/runs",
 )
-def get_observability_runs(
-    limit: int = 50,
-) -> Dict[str, Any]:
-
-    if limit < 1:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Limit must be at least 1."
-            ),
-        )
-
-    observations = load_observations()
-
-    recent = observations[-limit:]
-
-    recent.reverse()
+def get_observability_runs():
 
     return {
-        "runs": recent,
-        "count": len(recent),
+        "runs": load_observations()
     }
 
 
-@api.delete(
-    "/observability"
+@app_api.delete(
+    "/observability",
 )
-def clear_observability() -> Dict[str, Any]:
+def clear_observability():
 
-    deleted = False
+    from observability import OBSERVABILITY_FILE
 
     if OBSERVABILITY_FILE.exists():
-
         OBSERVABILITY_FILE.unlink()
 
-        deleted = True
+    return {
+        "message": "Observability history cleared.",
+    }
+
+
+# ============================================================
+# ROOT
+# ============================================================
+
+@app_api.get("/")
+def root():
 
     return {
-        "message": (
-            "Observability history "
-            "cleared successfully."
-        ),
-        "deleted": deleted,
+        "name": "Agentic Adaptive RAG API",
+        "status": "running",
+        "docs": "/docs",
     }
+
+
+# ============================================================
+# ASGI APPLICATION
+# ============================================================
+
+app = app_api
