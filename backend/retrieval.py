@@ -1,7 +1,7 @@
 from langchain_chroma import Chroma
 
-from backend.config import CHROMA_PATH, COLLECTION_NAME, RETRIEVAL_K
-from backend.model import embed_model
+from config import CHROMA_PATH, COLLECTION_NAME, RETRIEVAL_K
+from model import embed_model
 
 
 vectorstore = Chroma(

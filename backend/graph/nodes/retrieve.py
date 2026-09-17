@@ -2,7 +2,7 @@ import time
 from typing import Any, Dict
 
 from graph.state import GraphState
-from backend.retrieval import retriever
+from retrieval import retriever
 
 
 MAX_RETRIEVAL_RETRIES = 2
