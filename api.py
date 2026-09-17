@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import json
 import os
 import shutil
@@ -865,20 +867,18 @@ async def chat(request: ChatRequest):
                 )
             ),
 
-            retrieved_documents=len(
+            retrieved_documents=safe_int(
                 result.get(
                     "retrieved_documents",
-                    [],
+                    0,
                 )
-                or []
             ),
 
-            relevant_documents=len(
+            relevant_documents=safe_int(
                 result.get(
                     "relevant_documents",
-                    [],
+                    0,
                 )
-                or []
             ),
 
             grounded=bool(
@@ -926,6 +926,12 @@ async def chat(request: ChatRequest):
             ),
         )
 
+        record_evaluation(
+            question=question,
+            result=result,
+            latency_seconds=latency,
+        )
+
         return result
 
     except Exception as exc:
@@ -943,126 +949,7 @@ async def chat(request: ChatRequest):
             detail=str(exc),
         )
 
-        # ---------------------------------------------------------------
-        # COMPLETED RESPONSE
-        # ---------------------------------------------------------------
-
-        record_evaluation(
-            question=question,
-            result=result,
-            latency_seconds=latency,
-        )
-
-        return {
-            "status": "completed",
-            "thread_id": thread_id,
-            "question": question,
-            "answer": safe_str(
-                result.get(
-                    "answer",
-                    result.get(
-                        "generation",
-                        "",
-                    ),
-                )
-            ),
-            "generation": safe_str(
-                result.get(
-                    "generation",
-                    "",
-                )
-            ),
-            "route": normalise_route(
-                result
-            ),
-            "sources": result.get(
-                "sources",
-                [],
-            )
-            or [],
-            "retrieved_documents": safe_int(
-                result.get(
-                    "retrieved_documents",
-                    len(
-                        result.get(
-                            "documents",
-                            [],
-                        )
-                        or []
-                    ),
-                )
-            ),
-            "relevant_documents": safe_int(
-                result.get(
-                    "relevant_documents",
-                    0,
-                )
-            ),
-            "grounded": safe_bool(
-                result.get(
-                    "grounded",
-                    False,
-                )
-            ),
-            "answers_question": safe_bool(
-                result.get(
-                    "answers_question",
-                    False,
-                )
-            ),
-            "retry_count": safe_int(
-                result.get(
-                    "retry_count",
-                    0,
-                )
-            ),
-            "latency_seconds": round(
-                latency,
-                4,
-            ),
-            "hitl_status": result.get(
-                "hitl_status"
-            ),
-            "hitl_reason": result.get(
-                "hitl_reason"
-            ),
-            "security_status": result.get(
-                "security_status"
-            ),
-            "security_reason": result.get(
-                "security_reason"
-            ),
-            "security_redactions": (
-                result.get(
-                    "security_redactions",
-                    [],
-                )
-                or []
-            ),
-        }
-
-    except Exception as exc:
-
-        latency = (
-            perf_counter()
-            - start_time
-        )
-
-        error_message = str(exc)
-
-        record_evaluation(
-            question=question,
-            result={},
-            latency_seconds=latency,
-            error=error_message,
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=error_message,
-        )
-
-
+        
 # ============================================================================
 # HITL APPROVAL
 # ============================================================================
@@ -1287,32 +1174,24 @@ def clear_evaluation() -> Dict[str, str]:
 
 
 @api.get("/observability")
-def get_observability() -> Dict[str, Any]:
+async def get_observability():
+    records = load_observability_history()
 
-    try:
+    return {
+        "runs": records,
+        "summary": calculate_observability_summary(
+            records
+        ),
+    }
 
-        records = (
-            load_observability_history()
-        )
 
-        return {
-            "runs": records,
-            "summary": (
-                calculate_observability_summary(
-                    records
-                )
-            ),
-        }
+@api.delete("/observability")
+async def clear_observability():
+    clear_observability_history()
 
-    except Exception as exc:
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Failed to load observability "
-                f"history: {exc}"
-            ),
-        )
+    return {
+        "message": "Observability history cleared."
+    }
 
 
 @api.delete("/observability")
