@@ -5,6 +5,7 @@ from langchain_core.documents import Document
 
 class GraphState(TypedDict, total=False):
     question: str
+
     generation: str
     answer: str
 
@@ -31,3 +32,9 @@ class GraphState(TypedDict, total=False):
     web_search_approved: bool
     hitl_status: str
     hitl_reason: str
+
+    # Security state
+    security_status: str
+    security_reason: str
+    security_event: str
+    security_redactions: int
