@@ -14,7 +14,7 @@ from backend.ingestion import (
     list_documents,
 )
 
-from observability import RunObserver
+from backend.observability import RunObserver
 
 from backend.sources import extract_sources
 
