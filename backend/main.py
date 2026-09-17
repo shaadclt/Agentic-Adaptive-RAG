@@ -1,14 +1,14 @@
 from pathlib import Path
 from time import perf_counter
 
-from evaluation import (
+from backend.evaluation import (
     EvaluationResult,
     EvaluationTracker,
 )
 
 from graph.graph import app
 
-from ingestion import (
+from backend.ingestion import (
     build_vectorstore,
     delete_document,
     list_documents,
@@ -16,7 +16,7 @@ from ingestion import (
 
 from observability import RunObserver
 
-from sources import extract_sources
+from backend.sources import extract_sources
 
 
 SUPPORTED_EXTENSIONS = {

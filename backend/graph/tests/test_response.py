@@ -1,7 +1,7 @@
 from langchain_core.documents import Document
 
 from graph.nodes.build_response import build_response
-from response import RAGResponse
+from backend.response import RAGResponse
 
 
 def test_build_local_response():

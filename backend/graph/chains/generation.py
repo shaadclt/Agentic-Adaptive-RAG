@@ -1,7 +1,7 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-from model import llm_model
+from backend.model import llm_model
 
 
 llm = llm_model

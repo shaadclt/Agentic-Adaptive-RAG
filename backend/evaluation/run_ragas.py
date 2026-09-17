@@ -16,8 +16,8 @@ from ragas.metrics import (
 )
 
 from graph.chains.generation import generation_chain
-from retrieval import retriever
-from model import embed_model, llm_model
+from backend.retrieval import retriever
+from backend.model import embed_model, llm_model
 
 
 DATASET_FILE = (

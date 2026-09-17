@@ -11,14 +11,14 @@ from langchain_community.document_loaders import (
     TextLoader,
 )
 
-from config import (
+from backend.config import (
     CHROMA_PATH,
     COLLECTION_NAME,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     SUPPORTED_EXTENSIONS,
 )
-from model import embed_model
+from backend.model import embed_model
 
 
 def get_vectorstore() -> Chroma:

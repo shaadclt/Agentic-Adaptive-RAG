@@ -3,7 +3,7 @@ from typing import Literal
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from model import llm_model
+from backend.model import llm_model
 
 
 class RouteQuery(BaseModel):

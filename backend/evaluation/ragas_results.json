@@ -1,0 +1,56 @@
+{
+  "summary": {
+    "faithfulness": 0.75,
+    "answer_relevancy": NaN
+  },
+  "results": [
+    {
+      "user_input": "What is LangGraph used for?",
+      "retrieved_contexts": [
+        "LangGraph is used to coordinate the different steps of the RAG workflow.\n\nThe graph coordinates retrieval, document grading, generation, hallucination checking, answer grading, retry handling, and web search.",
+        "The system is designed around adaptive retrieval. It first attempts to use the user's local knowledge base. When the retrieved documents are not relevant enough to answer the question, the system can fall back to web search.\n\n## LangGraph",
+        "The project uses the LANGSMITH_PROJECT setting to identify the tracing project.\n\nLangSmith can be used to inspect the execution of the LangGraph workflow and its individual model calls.\n\n## Configuration",
+        "Agentic Adaptive RAG Test Document\n\nThis is a test document for the Agentic Adaptive RAG project.\n\nThe project uses LangGraph to coordinate retrieval, document grading,\ngeneration, hallucination checking, and web search."
+      ],
+      "response": "LangGraph is employed to orchestrate the various stages of a Retrieval‑Augmented Generation (RAG) workflow—coordinating tasks such as retrieval, document grading, generation, hallucination checking, answer grading, retry handling, and web search.",
+      "faithfulness": 1.0,
+      "answer_relevancy": NaN
+    },
+    {
+      "user_input": "What does this project use Chroma for?",
+      "retrieved_contexts": [
+        "Chroma is used as the vector database for the local knowledge base.\n\nUploaded documents are split into chunks and stored as vector embeddings in Chroma. Chroma allows the system to perform semantic similarity retrieval against the user's question.",
+        "The Chroma database is persisted locally in the .chroma directory.\n\n## Document Ingestion\n\nThe ingestion pipeline supports PDF, DOCX, TXT, and Markdown documents.",
+        "The workflow begins with a user question. Depending on whether a local knowledge base is available, the system either retrieves local documents or uses the question router to determine whether web search is appropriate.\n\n## Chroma",
+        "The embeddings allow semantic similarity search between a user question and document chunks.\n\n## Retrieval\n\nThe retriever uses Chroma to retrieve the most relevant document chunks for a question."
+      ],
+      "response": "The project uses **Chroma as the vector database for its local knowledge base**.  \nUploaded documents are split into chunks, embedded as vectors, and stored in Chroma. The system then queries Chroma to perform semantic‑similarity retrieval of the most relevant document chunks for a user’s question.",
+      "faithfulness": 1.0,
+      "answer_relevancy": NaN
+    },
+    {
+      "user_input": "What is the purpose of document retrieval in this project?",
+      "retrieved_contexts": [
+        "The embeddings allow semantic similarity search between a user question and document chunks.\n\n## Retrieval\n\nThe retriever uses Chroma to retrieve the most relevant document chunks for a question.",
+        "Retrieved documents are graded for relevance to the user's question.\n\nDocuments judged relevant are kept for generation.\n\nIf no retrieved documents are considered relevant, the system activates web search.",
+        "The default retrieval value is four documents, controlled by the RETRIEVAL_K configuration setting.\n\nAfter retrieval, each document is passed through a retrieval grader.\n\n## Retrieval Grading",
+        "The system should retrieve information from this document when the user\nasks a relevant question.\n\nThe purpose of this document is to validate dynamic document ingestion.\n\nThis document was updated during Phase 2.3."
+      ],
+      "response": "Document retrieval is used to locate the most relevant chunks of the knowledge base for a user’s question. By embedding the text and performing semantic similarity search (via Chroma), the system pulls a small set of candidate documents, grades them for relevance, and keeps the relevant ones to feed into the answer‑generation step. If no retrieved documents are deemed relevant, the system falls back to a web search. In short, retrieval supplies the information that powers the response.",
+      "faithfulness": 1.0,
+      "answer_relevancy": NaN
+    },
+    {
+      "user_input": "What happens when retrieved documents are not relevant?",
+      "retrieved_contexts": [
+        "Retrieved documents are graded for relevance to the user's question.\n\nDocuments judged relevant are kept for generation.\n\nIf no retrieved documents are considered relevant, the system activates web search.",
+        "The default retrieval value is four documents, controlled by the RETRIEVAL_K configuration setting.\n\nAfter retrieval, each document is passed through a retrieval grader.\n\n## Retrieval Grading",
+        "When the local knowledge base contains documents, the system initially attempts local retrieval.\n\nIf the retrieved local documents are not relevant, the graph falls back to web search.",
+        "Question\n-> determine whether local knowledge exists\n-> retrieve local documents when available\n-> grade retrieved documents\n-> use relevant documents when available\n-> perform web search when local documents are insufficient\n-> generate an answer"
+      ],
+      "response": "When the retrieved documents are judged not relevant, the system falls back to a web search to obtain information for answering the question.",
+      "faithfulness": 0.0,
+      "answer_relevancy": NaN
+    }
+  ]
+}

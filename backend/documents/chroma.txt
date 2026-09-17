@@ -1,0 +1,4 @@
+Chroma is a vector database used by this project.
+
+Documents are converted into embeddings and stored in the Chroma
+vector database so that relevant information can be retrieved later.

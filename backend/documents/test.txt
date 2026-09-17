@@ -1,0 +1,13 @@
+Agentic Adaptive RAG Test Document
+
+This is a test document for the Agentic Adaptive RAG project.
+
+The project uses LangGraph to coordinate retrieval, document grading,
+generation, hallucination checking, and web search.
+
+The system should retrieve information from this document when the user
+asks a relevant question.
+
+The purpose of this document is to validate dynamic document ingestion.
+
+This document was updated during Phase 2.3.
