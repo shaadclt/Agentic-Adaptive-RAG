@@ -2,17 +2,12 @@
 
 import {
   ChangeEvent,
+  FormEvent,
+  KeyboardEvent,
   useEffect,
   useRef,
   useState,
 } from "react";
-
-import Link from "next/link";
-
-
-/* ============================================================
-   TYPES
-============================================================ */
 
 type DocumentItem = {
   document_id: string;
@@ -24,1228 +19,853 @@ type DocumentItem = {
 
 type Source = {
   type: string;
-  title?: string;
   file_name?: string;
-  url?: string;
   source?: string;
   document_id?: string;
-};
-
-type Metrics = {
-  retrieved_documents: number;
-  relevant_documents: number;
-  grounded: boolean;
-  answers_question: boolean;
-  retry_count: number;
-  latency_seconds: number;
+  title?: string;
+  url?: string;
 };
 
 type ChatResponse = {
-  status: string;
-
-  answer: string;
-
-  route: string;
-
-  sources: Source[];
-
-  metrics?: Metrics | null;
-
-  thread_id: string;
-
-  approval_required: boolean;
-
-  approval_type: string;
-
-  approval_title: string;
-
-  approval_message: string;
-
+  answer?: string;
+  generation?: string;
+  response?: string;
+  route?: string;
+  sources?: Source[];
+  retrieved_documents?: number;
+  relevant_documents?: number;
+  grounded?: boolean;
+  answers_question?: boolean;
+  retry_count?: number;
+  latency_seconds?: number;
+  hitl_status?: string;
+  hitl_reason?: string;
   security_status?: string;
-
   security_reason?: string;
-
-  security_event?: string;
-
   security_redactions?: number;
+  web_search?: boolean;
+  [key: string]: unknown;
 };
 
-
-/* ============================================================
-   CONFIG
-============================================================ */
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000";
-
-
-/* ============================================================
-   COMPONENT
-============================================================ */
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
+  "http://localhost:8000";
 
 export default function Home() {
-  const [documents, setDocuments] =
-    useState<DocumentItem[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [question, setQuestion] = useState("");
+  const [submittedQuestion, setSubmittedQuestion] = useState("");
+  const [response, setResponse] = useState<ChatResponse | null>(null);
 
-  const [selectedFiles, setSelectedFiles] =
-    useState<File[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const [question, setQuestion] =
-    useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const [submittedQuestion, setSubmittedQuestion] =
-    useState("");
+  const [pendingApproval, setPendingApproval] = useState(false);
+  const [approvalReason, setApprovalReason] = useState("");
 
-  const [response, setResponse] =
-    useState<ChatResponse | null>(null);
-
-  const [loadingDocuments, setLoadingDocuments] =
-    useState(false);
-
-  const [uploading, setUploading] =
-    useState(false);
-
-  const [asking, setAsking] =
-    useState(false);
-
-  const [deletingId, setDeletingId] =
-    useState<string | null>(null);
-
-  const [error, setError] =
-    useState("");
-
-  const [approvalLoading, setApprovalLoading] =
-    useState(false);
-
-  const fileInputRef =
-    useRef<HTMLInputElement>(null);
-
-
-  /* ==========================================================
-     LOAD DOCUMENTS
-  ========================================================== */
-
-  async function loadDocuments() {
-    setLoadingDocuments(true);
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/documents`,
-        {
-          cache: "no-store",
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error(
-          "Failed to load documents."
-        );
-      }
-
-      const data = await res.json();
-
-      setDocuments(
-        Array.isArray(data.documents)
-          ? data.documents
-          : []
-      );
-
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        "Unable to load the knowledge base."
-      );
-
-    } finally {
-      setLoadingDocuments(false);
-    }
-  }
-
-
-  /* ==========================================================
-     INITIAL LOAD
-  ========================================================== */
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadDocuments();
   }, []);
 
+  async function loadDocuments() {
+    try {
+      setLoadingDocuments(true);
+      setError("");
 
-  /* ==========================================================
-     FILE SELECTION
-  ========================================================== */
+      const res = await fetch(`${API_URL}/documents`, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-  function handleFileChange(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
-    const files = Array.from(
-      event.target.files || []
-    );
+      const data = await res.json().catch(() => ({}));
 
-    setSelectedFiles(files);
+      if (!res.ok) {
+        throw new Error(data.detail || "Failed to load documents.");
+      }
 
-    setError("");
+      setDocuments(Array.isArray(data) ? data : data.documents || []);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to connect to the backend."
+      );
+    } finally {
+      setLoadingDocuments(false);
+    }
   }
 
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
 
-  /* ==========================================================
-     UPLOAD
-  ========================================================== */
-
-  async function uploadFiles() {
-    if (!selectedFiles.length) {
+    if (!files.length) {
       return;
     }
 
-    setUploading(true);
-
+    setSelectedFiles(files);
     setError("");
+    setSuccess("");
+  }
+
+  function removeSelectedFile(index: number) {
+    setSelectedFiles((current) =>
+      current.filter((_, fileIndex) => fileIndex !== index)
+    );
+  }
+
+  function clearFileSelection() {
+    setSelectedFiles([]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  async function uploadFiles() {
+    if (!selectedFiles.length) {
+      setError("Please select at least one document.");
+      return;
+    }
 
     try {
+      setUploading(true);
+      setError("");
+      setSuccess("");
+
       const formData = new FormData();
 
-      selectedFiles.forEach(
-        (file) => {
-          formData.append(
-            "files",
-            file
-          );
-        }
-      );
+      selectedFiles.forEach((file) => {
+        formData.append("files", file);
+      });
 
-      const res = await fetch(
-        `${API_BASE}/documents/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      /*
+       * IMPORTANT:
+       * Do NOT manually set Content-Type here.
+       * The browser automatically creates:
+       * multipart/form-data; boundary=...
+       */
+      const res = await fetch(`${API_URL}/upload`, {
+        method: "POST",
+        body: formData,
+      });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         throw new Error(
           data.detail ||
-          "Upload failed."
+            data.message ||
+            `Upload failed with status ${res.status}.`
         );
       }
 
-      const failed =
-        data.results?.filter(
-          (item: any) =>
-            item.status === "failed"
-        ) || [];
-
-      if (failed.length > 0) {
-        setError(
-          failed
-            .map(
-              (item: any) =>
-                `${item.file_name}: ${
-                  item.message || "Upload failed"
-                }`
-            )
-            .join("\n")
-        );
-      }
-
-      /*
-       * Clear selected files after successful
-       * upload processing.
-       */
-      setSelectedFiles([]);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-
-      await loadDocuments();
-
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Upload failed."
+      setSuccess(
+        data.message ||
+          `${selectedFiles.length} document${
+            selectedFiles.length > 1 ? "s" : ""
+          } uploaded successfully.`
       );
 
+      // Clear the file picker after successful upload.
+      clearFileSelection();
+
+      await loadDocuments();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to upload documents."
+      );
     } finally {
       setUploading(false);
     }
   }
 
-
-  /* ==========================================================
-     DELETE DOCUMENT
-  ========================================================== */
-
-  async function deleteDocument(
-    documentId: string
-  ) {
-    const confirmed =
-      window.confirm(
-        "Delete this document from the knowledge base?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingId(documentId);
-
-    setError("");
-
+  async function deleteDocument(documentId: string) {
     try {
-      const res = await fetch(
-        `${API_BASE}/documents/${encodeURIComponent(
-          documentId
-        )}`,
-        {
-          method: "DELETE",
-        }
-      );
+      setDeletingId(documentId);
+      setError("");
+      setSuccess("");
 
-      const data = await res.json();
+      const res = await fetch(`${API_URL}/documents/${documentId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(
-          data.detail ||
-          "Failed to delete document."
-        );
+        throw new Error(data.detail || "Failed to delete document.");
       }
 
+      setSuccess(data.message || "Document deleted successfully.");
+
       await loadDocuments();
-
     } catch (err) {
-      console.error(err);
-
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to delete document."
+        err instanceof Error ? err.message : "Unable to delete document."
       );
-
     } finally {
       setDeletingId(null);
     }
   }
 
+  async function askQuestion(event?: FormEvent) {
+    event?.preventDefault();
 
-  /* ==========================================================
-     ASK AGENT
-  ========================================================== */
-
-  async function askAgent() {
-    const trimmedQuestion =
-      question.trim();
+    const trimmedQuestion = question.trim();
 
     if (!trimmedQuestion) {
-      setError(
-        "Please enter a question."
-      );
-
+      setError("Please enter a question.");
       return;
     }
 
-    setAsking(true);
-
-    setError("");
-
-    setResponse(null);
-
     try {
-      const res = await fetch(
-        `${API_BASE}/chat`,
-        {
-          method: "POST",
+      setAsking(true);
+      setError("");
+      setSuccess("");
+      setResponse(null);
+      setPendingApproval(false);
+      setApprovalReason("");
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+      const res = await fetch(`${API_URL}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question: trimmedQuestion,
+        }),
+      });
 
-          body: JSON.stringify({
-            question:
-              trimmedQuestion,
-          }),
-        }
-      );
-
-      const data: ChatResponse =
-        await res.json();
+      const data: ChatResponse = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         throw new Error(
-          typeof data === "object" &&
-          data &&
-          "answer" in data
-            ? data.answer
-            : "Request failed."
+          typeof data.detail === "string"
+            ? data.detail
+            : "Failed to process the question."
         );
       }
 
-      /*
-       * Preserve the question that was actually
-       * submitted while clearing the input field.
-       */
-      setSubmittedQuestion(
-        trimmedQuestion
-      );
-
+      setSubmittedQuestion(trimmedQuestion);
       setQuestion("");
 
       setResponse(data);
 
+      /*
+       * Human-in-the-loop:
+       * The backend can request approval before web search.
+       */
+      const hitlStatus =
+        typeof data.hitl_status === "string"
+          ? data.hitl_status.toLowerCase()
+          : "";
+
+      if (
+        hitlStatus === "pending" ||
+        hitlStatus === "awaiting_approval" ||
+        hitlStatus === "approval_required"
+      ) {
+        setPendingApproval(true);
+        setApprovalReason(
+          typeof data.hitl_reason === "string"
+            ? data.hitl_reason
+            : "Web search approval is required."
+        );
+      }
     } catch (err) {
-      console.error(err);
-
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to process the question."
+        err instanceof Error ? err.message : "Unable to process your question."
       );
-
     } finally {
       setAsking(false);
     }
   }
 
-
-  /* ==========================================================
-     HITL DECISION
-  ========================================================== */
-
-  async function handleApproval(
-    approved: boolean
-  ) {
-    if (!response?.thread_id) {
-      return;
-    }
-
-    setApprovalLoading(true);
-
-    setError("");
-
+  async function submitApproval(approved: boolean) {
     try {
-      const res = await fetch(
-        `${API_BASE}/chat/${encodeURIComponent(
-          response.thread_id
-        )}/web-search`,
-        {
-          method: "POST",
+      setAsking(true);
+      setError("");
+      setSuccess("");
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+      const res = await fetch(`${API_URL}/chat/approval`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          approved,
+        }),
+      });
 
-          body: JSON.stringify({
-            approved,
-          }),
-        }
-      );
-
-      const data: ChatResponse =
-        await res.json();
+      const data: ChatResponse = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         throw new Error(
-          data.answer ||
-          "Unable to process approval."
+          typeof data.detail === "string"
+            ? data.detail
+            : "Failed to submit approval."
         );
       }
 
       setResponse(data);
-
+      setPendingApproval(false);
+      setApprovalReason("");
     } catch (err) {
-      console.error(err);
-
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to process approval."
+          : "Unable to submit approval decision."
       );
-
     } finally {
-      setApprovalLoading(false);
+      setAsking(false);
     }
   }
-
-
-  /* ==========================================================
-     KEYBOARD HANDLER
-  ========================================================== */
 
   function handleQuestionKeyDown(
-    event: React.KeyboardEvent<HTMLTextAreaElement>
+    event: KeyboardEvent<HTMLTextAreaElement>
   ) {
-    if (
-      event.key === "Enter" &&
-      !event.shiftKey
-    ) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-
-      if (!asking) {
-        askAgent();
-      }
+      askQuestion();
     }
   }
 
+  function formatSourceName(source: Source) {
+    if (source.type === "web") {
+      return source.title || source.url || "Web source";
+    }
 
-  /* ==========================================================
-     RENDER
-  ========================================================== */
+    return source.file_name || source.source || "Local document";
+  }
+
+  function getAnswer() {
+    if (!response) {
+      return "";
+    }
+
+    return (
+      response.answer ||
+      response.generation ||
+      response.response ||
+      "No answer was returned."
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-
+    <main className="min-h-screen bg-[#09090b] text-zinc-100">
       <div className="flex min-h-screen">
-
-        {/* ====================================================
-            SIDEBAR
-        ==================================================== */}
-
-        <aside className="hidden w-80 shrink-0 border-r border-slate-800 bg-slate-950 lg:block">
-
-          <div className="sticky top-0 flex h-screen flex-col">
-
-            {/* Brand */}
-
-            <div className="border-b border-slate-800 px-6 py-6">
-
-              <div className="flex items-center gap-3">
-
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-sm font-bold text-white">
-                  AR
-                </div>
-
-                <div>
-                  <h1 className="font-semibold">
-                    Agentic RAG
-                  </h1>
-
-                  <p className="text-xs text-slate-500">
-                    Adaptive Knowledge Assistant
-                  </p>
-                </div>
-
+        {/* SIDEBAR */}
+        <aside className="hidden w-[320px] shrink-0 border-r border-zinc-800 bg-[#0d0d0f] lg:flex lg:flex-col">
+          <div className="border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-black">
+                <span className="text-lg font-bold">A</span>
               </div>
-
-            </div>
-
-
-            {/* Knowledge Base */}
-
-            <div className="flex-1 overflow-y-auto px-4 py-5">
-
-              <div className="mb-3 flex items-center justify-between px-2">
-
-                <div>
-
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Knowledge Base
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-600">
-                    {documents.length}{" "}
-                    {documents.length === 1
-                      ? "document"
-                      : "documents"}
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={loadDocuments}
-                  disabled={loadingDocuments}
-                  className="rounded-lg px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-900 hover:text-slate-300 disabled:opacity-50"
-                  title="Refresh"
-                >
-                  ↻
-                </button>
-
-              </div>
-
-
-              {/* Upload */}
-
-              <div className="mb-5 rounded-xl border border-dashed border-slate-800 bg-slate-900/30 p-4">
-
-                <label className="block cursor-pointer">
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".pdf,.docx,.txt,.md"
-                    onChange={
-                      handleFileChange
-                    }
-                    className="hidden"
-                  />
-
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-4 text-center transition hover:border-slate-700">
-
-                    <div className="text-xl">
-                      +
-                    </div>
-
-                    <p className="mt-1 text-sm font-medium text-slate-300">
-                      Add documents
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-600">
-                      PDF, DOCX, TXT, MD
-                    </p>
-
-                  </div>
-
-                </label>
-
-
-                {selectedFiles.length > 0 && (
-                  <div className="mt-3">
-
-                    <p className="text-xs text-slate-500">
-                      {selectedFiles.length} selected
-                    </p>
-
-                    <div className="mt-2 space-y-1">
-
-                      {selectedFiles.map(
-                        (file) => (
-                          <div
-                            key={`${file.name}-${file.size}`}
-                            className="truncate rounded-md bg-slate-900 px-2 py-1 text-xs text-slate-400"
-                          >
-                            {file.name}
-                          </div>
-                        )
-                      )}
-
-                    </div>
-
-
-                    <button
-                      onClick={uploadFiles}
-                      disabled={uploading}
-                      className="mt-3 w-full rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {uploading
-                        ? "Uploading..."
-                        : "Upload"}
-                    </button>
-
-                  </div>
-                )}
-
-              </div>
-
-
-              {/* Documents */}
-
-              <div className="space-y-2">
-
-                {loadingDocuments ? (
-
-                  <div className="rounded-xl border border-slate-900 px-4 py-5 text-center text-sm text-slate-600">
-                    Loading documents...
-                  </div>
-
-                ) : documents.length === 0 ? (
-
-                  <div className="rounded-xl border border-slate-900 px-4 py-6 text-center">
-
-                    <p className="text-sm text-slate-500">
-                      Knowledge base is empty.
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-700">
-                      Upload a document to get started.
-                    </p>
-
-                  </div>
-
-                ) : (
-
-                  documents.map(
-                    (document) => (
-
-                      <div
-                        key={
-                          document.document_id
-                        }
-                        className="group rounded-xl border border-slate-900 bg-slate-950 p-3 transition hover:border-slate-800"
-                      >
-
-                        <div className="flex items-start gap-3">
-
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-xs font-semibold text-slate-500">
-                            {(
-                              document.file_type ||
-                              "DOC"
-                            )
-                              .replace(".", "")
-                              .slice(0, 3)
-                              .toUpperCase()}
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-
-                            <p
-                              className="truncate text-sm font-medium text-slate-300"
-                              title={
-                                document.file_name
-                              }
-                            >
-                              {
-                                document.file_name
-                              }
-                            </p>
-
-                            <p className="mt-1 text-xs text-slate-600">
-                              {document.chunk_count ??
-                                0}{" "}
-                              chunks
-                            </p>
-
-                          </div>
-
-                          <button
-                            onClick={() =>
-                              deleteDocument(
-                                document.document_id
-                              )
-                            }
-                            disabled={
-                              deletingId ===
-                              document.document_id
-                            }
-                            className="opacity-0 transition group-hover:opacity-100 rounded-md px-2 py-1 text-xs text-slate-600 hover:bg-red-950/30 hover:text-red-400 disabled:opacity-50"
-                            title="Delete document"
-                          >
-                            {deletingId ===
-                            document.document_id
-                              ? "..."
-                              : "×"}
-                          </button>
-
-                        </div>
-
-                      </div>
-
-                    )
-                  )
-
-                )}
-
-              </div>
-
-            </div>
-
-
-            {/* Sidebar bottom */}
-
-            <div className="border-t border-slate-800 p-4">
-
-              <Link
-                href="/observability"
-                className="flex items-center justify-between rounded-xl px-3 py-3 text-sm text-slate-500 transition hover:bg-slate-900 hover:text-slate-300"
-              >
-                <span>
-                  Observability
-                </span>
-
-                <span>
-                  →
-                </span>
-
-              </Link>
-
-              <Link
-                  href="/evaluation"
-                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.05] hover:text-white"
-                >
-                  <span>▣</span>
-                  <span>Evaluation</span>
-                </Link>
-
-            </div>
-
-          </div>
-
-        </aside>
-
-
-        {/* ====================================================
-            MAIN
-        ==================================================== */}
-
-        <section className="min-w-0 flex-1">
-
-          <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 lg:px-12">
-
-
-            {/* Mobile header */}
-
-            <div className="mb-8 flex items-center justify-between lg:hidden">
 
               <div>
+                <h1 className="font-semibold">Agentic Adaptive RAG</h1>
+                <p className="text-xs text-zinc-500">
+                  Knowledge Intelligence
+                </p>
+              </div>
+            </div>
+          </div>
 
-                <h1 className="font-semibold">
-                  Agentic RAG
-                </h1>
+          <div className="flex-1 overflow-y-auto p-5">
+            <div className="mb-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Knowledge Base</p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Your uploaded documents
+                  </p>
+                </div>
 
-                <p className="text-xs text-slate-600">
-                  Adaptive Knowledge Assistant
+                <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-400">
+                  {documents.length}
+                </span>
+              </div>
+            </div>
+
+            {/* UPLOAD */}
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <label className="mb-3 block text-sm font-medium">
+                Add documents
+              </label>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.txt,.md"
+                onChange={handleFileChange}
+                className="block w-full cursor-pointer rounded-xl border border-zinc-700 bg-zinc-950 p-2 text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-zinc-200 hover:file:bg-zinc-700"
+              />
+
+              <p className="mt-2 text-[11px] leading-4 text-zinc-600">
+                Supported: PDF, DOCX, TXT, Markdown
+              </p>
+
+              {selectedFiles.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {selectedFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${index}`}
+                      className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2"
+                    >
+                      <div className="min-w-0 pr-3">
+                        <p className="truncate text-xs text-zinc-300">
+                          {file.name}
+                        </p>
+                        <p className="text-[10px] text-zinc-600">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeSelectedFile(index)}
+                        className="text-xs text-zinc-500 hover:text-red-400"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={uploadFiles}
+                    disabled={uploading}
+                    className="mt-2 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {uploading ? "Uploading..." : "Upload documents"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* DOCUMENTS */}
+            <div className="mt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                  Documents
                 </p>
 
+                <button
+                  type="button"
+                  onClick={loadDocuments}
+                  disabled={loadingDocuments}
+                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                >
+                  Refresh
+                </button>
               </div>
 
-              <Link
-                href="/observability"
-                className="rounded-lg border border-slate-800 px-3 py-2 text-xs text-slate-400"
-              >
-                Observability
-              </Link>
+              {loadingDocuments ? (
+                <div className="rounded-xl border border-zinc-800 p-4 text-center text-xs text-zinc-500">
+                  Loading documents...
+                </div>
+              ) : documents.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-zinc-800 p-5 text-center">
+                  <p className="text-sm text-zinc-500">
+                    No documents uploaded
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-700">
+                    Upload files to build your knowledge base.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {documents.map((document) => (
+                    <div
+                      key={document.document_id}
+                      className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p
+                            className="truncate text-sm text-zinc-300"
+                            title={document.file_name}
+                          >
+                            {document.file_name}
+                          </p>
 
+                          <p className="mt-1 text-[10px] uppercase text-zinc-600">
+                            {document.file_type ||
+                              document.file_name
+                                ?.split(".")
+                                .pop()
+                                ?.toUpperCase() ||
+                              "DOCUMENT"}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            deleteDocument(document.document_id)
+                          }
+                          disabled={deletingId === document.document_id}
+                          className="text-xs text-zinc-600 opacity-0 transition group-hover:opacity-100 hover:text-red-400 disabled:opacity-50"
+                        >
+                          {deletingId === document.document_id
+                            ? "..."
+                            : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
 
+          {/* SIDEBAR LINKS */}
+          <div className="border-t border-zinc-800 p-4">
+            <a
+              href="/evaluation"
+              className="mb-2 block rounded-xl px-3 py-2.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+            >
+              Evaluation
+            </a>
 
-            {/* Hero */}
+            <a
+              href="/observability"
+              className="block rounded-xl px-3 py-2.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+            >
+              Observability
+            </a>
+          </div>
+        </aside>
 
+        {/* MAIN */}
+        <section className="flex min-w-0 flex-1 flex-col">
+          {/* MOBILE HEADER */}
+          <header className="border-b border-zinc-800 bg-[#0d0d0f] px-5 py-4 lg:hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="font-semibold">Agentic Adaptive RAG</h1>
+                <p className="text-xs text-zinc-500">
+                  Knowledge Intelligence
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <a
+                  href="/evaluation"
+                  className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400"
+                >
+                  Evaluation
+                </a>
+
+                <a
+                  href="/observability"
+                  className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400"
+                >
+                  Observability
+                </a>
+              </div>
+            </div>
+          </header>
+
+          <div className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 md:px-8 lg:py-12">
+            {/* HEADER */}
             <div className="mb-10">
+              <div className="mb-3 inline-flex rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-500">
+                Agentic Retrieval • Adaptive Routing • Grounded Generation
+              </div>
 
-              <p className="text-sm font-medium text-slate-500">
-                Ask the Agent
-              </p>
-
-              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                Ask questions across your knowledge base.
+              <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
+                Ask your knowledge base
               </h2>
 
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-                The agent dynamically chooses local
-                retrieval or external web search,
-                evaluates evidence, and validates
-                generated answers.
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500 md:text-base">
+                Ask questions about your uploaded documents. The system
+                dynamically decides whether to use local retrieval or web
+                search based on available evidence.
               </p>
-
             </div>
 
-
-            {/* Error */}
-
+            {/* ALERTS */}
             {error && (
-              <div className="mb-6 whitespace-pre-line rounded-xl border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
+              <div className="mb-5 rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
                 {error}
               </div>
             )}
 
-
-            {/* =================================================
-                ASK BOX
-            ================================================= */}
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4 shadow-2xl shadow-black/10 sm:p-5">
-
-              <textarea
-                value={question}
-                onChange={(event) =>
-                  setQuestion(
-                    event.target.value
-                  )
-                }
-                onKeyDown={
-                  handleQuestionKeyDown
-                }
-                disabled={asking}
-                placeholder="Ask something about your documents..."
-                rows={4}
-                className="w-full resize-none bg-transparent text-base leading-7 text-slate-200 outline-none placeholder:text-slate-700 disabled:opacity-50"
-              />
-
-              <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-4">
-
-                <p className="text-xs text-slate-600">
-                  Enter to submit · Shift + Enter for new line
-                </p>
-
-                <button
-                  onClick={askAgent}
-                  disabled={
-                    asking ||
-                    !question.trim()
-                  }
-                  className="rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {asking
-                    ? "Thinking..."
-                    : "Ask Agent"}
-                </button>
-
+            {success && (
+              <div className="mb-5 rounded-xl border border-emerald-900/50 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-300">
+                {success}
               </div>
+            )}
 
+            {/* SECURITY NOTICE */}
+            <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <div className="flex gap-3">
+                <div className="mt-0.5 text-zinc-500">✓</div>
+
+                <div>
+                  <p className="text-sm font-medium text-zinc-300">
+                    Security-aware RAG
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-zinc-600">
+                    Uploaded and retrieved content is treated as untrusted
+                    data. Prompt injection and sensitive output patterns are
+                    monitored.
+                  </p>
+                </div>
+              </div>
             </div>
 
+            {/* ASK FORM */}
+            <form onSubmit={askQuestion}>
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/20">
+                <textarea
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={handleQuestionKeyDown}
+                  placeholder="Ask something about your documents..."
+                  rows={5}
+                  disabled={asking}
+                  className="w-full resize-none bg-transparent px-5 py-5 text-sm leading-6 text-zinc-100 outline-none placeholder:text-zinc-700 disabled:opacity-50"
+                />
 
-            {/* =================================================
-                EMPTY STATE
-            ================================================= */}
-
-            {!response &&
-              !asking && (
-                <div className="py-20 text-center">
-
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 text-lg text-slate-600">
-                    ?
-                  </div>
-
-                  <p className="mt-4 text-sm text-slate-500">
-                    Your answer will appear here.
+                <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-3">
+                  <p className="text-[11px] text-zinc-700">
+                    Press Enter to ask · Shift + Enter for a new line
                   </p>
 
+                  <button
+                    type="submit"
+                    disabled={asking || !question.trim()}
+                    className="rounded-xl bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {asking ? "Thinking..." : "Ask Agent"}
+                  </button>
                 </div>
-              )}
-
-
-            {/* =================================================
-                LOADING
-            ================================================= */}
-
-            {asking && (
-              <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/20 p-6">
-
-                <div className="flex items-center gap-3">
-
-                  <div className="h-2 w-2 animate-pulse rounded-full bg-slate-400" />
-
-                  <p className="text-sm text-slate-500">
-                    Agent is retrieving evidence and evaluating the request...
-                  </p>
-
-                </div>
-
               </div>
-            )}
+            </form>
 
+            {/* HITL APPROVAL */}
+            {pendingApproval && (
+              <div className="mt-6 rounded-2xl border border-amber-900/60 bg-amber-950/20 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 text-amber-400">!</div>
 
-            {/* =================================================
-                HITL APPROVAL
-            ================================================= */}
+                  <div className="flex-1">
+                    <h3 className="font-medium text-amber-200">
+                      Web search approval required
+                    </h3>
 
-            {response?.approval_required && (
-              <div className="mt-8 rounded-2xl border border-amber-900/60 bg-amber-950/20 p-6">
-
-                <div className="flex items-start gap-4">
-
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-950 text-amber-400">
-                    !
-                  </div>
-
-                  <div className="min-w-0">
-
-                    <p className="text-sm font-semibold text-amber-300">
-                      {response.approval_title ||
-                        "Web search approval required"}
+                    <p className="mt-2 text-sm leading-6 text-amber-300/70">
+                      {approvalReason ||
+                        "The agent wants to use external web search because local evidence may be insufficient."}
                     </p>
 
-                    <p className="mt-2 text-sm leading-6 text-slate-400">
-                      {response.approval_message ||
-                        "The agent needs permission to search the web."}
-                    </p>
-
-                    <div className="mt-5 flex flex-wrap gap-3">
-
+                    <div className="mt-4 flex gap-3">
                       <button
-                        onClick={() =>
-                          handleApproval(
-                            true
-                          )
-                        }
-                        disabled={
-                          approvalLoading
-                        }
-                        className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:opacity-50"
+                        type="button"
+                        onClick={() => submitApproval(true)}
+                        disabled={asking}
+                        className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300 disabled:opacity-50"
                       >
-                        {approvalLoading
-                          ? "Processing..."
-                          : "Allow Web Search"}
+                        Approve web search
                       </button>
 
                       <button
-                        onClick={() =>
-                          handleApproval(
-                            false
-                          )
-                        }
-                        disabled={
-                          approvalLoading
-                        }
-                        className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-slate-900 disabled:opacity-50"
+                        type="button"
+                        onClick={() => submitApproval(false)}
+                        disabled={asking}
+                        className="rounded-xl border border-amber-800 px-4 py-2 text-sm font-medium text-amber-300 hover:bg-amber-950/50 disabled:opacity-50"
                       >
-                        Don't Search
+                        Reject
                       </button>
-
                     </div>
-
                   </div>
-
                 </div>
-
               </div>
             )}
 
+            {/* RESPONSE */}
+            {response && (
+              <div className="mt-8 space-y-5">
+                {/* SUBMITTED QUESTION */}
+                {submittedQuestion && (
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+                    <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+                      Submitted question
+                    </p>
 
-            {/* =================================================
-                ANSWER
-            ================================================= */}
-
-            {response &&
-              !response.approval_required && (
-                <div className="mt-8 space-y-5">
-
-
-                  {/* Question */}
-
-                  {submittedQuestion && (
-                    <div>
-
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Question
-                      </h3>
-
-                      <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950 px-5 py-4 text-base font-medium leading-6 text-slate-300">
-                        {submittedQuestion}
-                      </div>
-
-                    </div>
-                  )}
-
-
-                  {/* Answer */}
-
-                  <div>
-
-                    <div className="flex items-center justify-between">
-
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Answer
-                      </h3>
-
-                      {response.route && (
-                        <span className="rounded-full border border-slate-800 px-2.5 py-1 text-xs text-slate-500">
-                          {response.route}
-                        </span>
-                      )}
-
-                    </div>
-
-                    <div className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-900/40 p-5 text-[15px] leading-7 text-slate-300">
-                      {response.answer}
-                    </div>
-
+                    <p className="text-sm leading-6 text-zinc-300">
+                      {submittedQuestion}
+                    </p>
                   </div>
+                )}
 
+                {/* ANSWER */}
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+                  <div className="mb-5 flex items-center justify-between">
+                    <h3 className="text-sm font-medium text-zinc-300">
+                      Answer
+                    </h3>
 
-                  {/* Security */}
-
-                  {response.security_status &&
-                    response.security_status !==
-                      "passed" && (
-                      <div className="rounded-xl border border-amber-900/60 bg-amber-950/20 px-4 py-4">
-
-                        <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-                          Security Notice
-                        </p>
-
-                        <p className="mt-2 text-sm leading-6 text-slate-400">
-                          {response.security_reason ||
-                            "The response was processed by the security layer."}
-                        </p>
-
-                        {response.security_redactions &&
-                          response.security_redactions >
-                            0 && (
-                            <p className="mt-2 text-xs text-amber-500">
-                              {
-                                response.security_redactions
-                              }{" "}
-                              sensitive value
-                              {response.security_redactions ===
-                              1
-                                ? ""
-                                : "s"}{" "}
-                              redacted.
-                            </p>
-                          )}
-
-                      </div>
+                    {response.route && (
+                      <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                        {String(response.route)}
+                      </span>
                     )}
+                  </div>
 
+                  <div className="whitespace-pre-wrap text-sm leading-7 text-zinc-300">
+                    {getAnswer()}
+                  </div>
+                </div>
 
-                  {/* Metrics */}
+                {/* RUN METRICS */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <Metric
+                    label="Retrieved"
+                    value={response.retrieved_documents ?? 0}
+                  />
 
-                  {response.metrics && (
-                    <div>
+                  <Metric
+                    label="Relevant"
+                    value={response.relevant_documents ?? 0}
+                  />
 
-                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Run Metrics
-                      </h3>
+                  <Metric
+                    label="Retries"
+                    value={response.retry_count ?? 0}
+                  />
 
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                  <Metric
+                    label="Latency"
+                    value={
+                      typeof response.latency_seconds === "number"
+                        ? `${response.latency_seconds.toFixed(2)}s`
+                        : "—"
+                    }
+                  />
+                </div>
 
-                        <Metric
-                          label="Retrieved"
-                          value={
-                            response.metrics
-                              .retrieved_documents
-                          }
-                        />
+                {/* QUALITY */}
+                <div className="grid gap-3 md:grid-cols-3">
+                  <StatusCard
+                    label="Grounded"
+                    value={response.grounded}
+                  />
 
-                        <Metric
-                          label="Relevant"
-                          value={
-                            response.metrics
-                              .relevant_documents
-                          }
-                        />
+                  <StatusCard
+                    label="Answers Question"
+                    value={response.answers_question}
+                  />
 
-                        <Metric
-                          label="Grounded"
-                          value={
-                            response.metrics
-                              .grounded
-                              ? "Yes"
-                              : "No"
-                          }
-                        />
+                  <StatusCard
+                    label="Route"
+                    value={response.route || "unknown"}
+                  />
+                </div>
 
-                        <Metric
-                          label="Quality"
-                          value={
-                            response.metrics
-                              .answers_question
-                              ? "Yes"
-                              : "No"
-                          }
-                        />
+                {/* SECURITY */}
+                {response.security_status && (
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-300">
+                          Security status
+                        </p>
 
-                        <Metric
-                          label="Retries"
-                          value={
-                            response.metrics
-                              .retry_count
-                          }
-                        />
-
-                        <Metric
-                          label="Latency"
-                          value={`${response.metrics.latency_seconds.toFixed(
-                            2
-                          )}s`}
-                        />
-
+                        <p className="mt-1 text-xs text-zinc-600">
+                          {response.security_reason ||
+                            "Security checks completed."}
+                        </p>
                       </div>
 
+                      <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-400">
+                        {response.security_status}
+                      </span>
                     </div>
-                  )}
 
+                    {typeof response.security_redactions === "number" &&
+                      response.security_redactions > 0 && (
+                        <p className="mt-3 text-xs text-amber-400">
+                          {response.security_redactions} sensitive item
+                          {response.security_redactions > 1 ? "s" : ""}{" "}
+                          redacted.
+                        </p>
+                      )}
+                  </div>
+                )}
 
-                  {/* Sources */}
-
-                  {response.sources &&
-                    response.sources.length >
-                      0 && (
-                      <div>
-
-                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                {/* SOURCES */}
+                {Array.isArray(response.sources) &&
+                  response.sources.length > 0 && (
+                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+                      <div className="mb-4">
+                        <h3 className="text-sm font-medium text-zinc-300">
                           Sources
                         </h3>
 
-                        <div className="space-y-2">
-
-                          {response.sources.map(
-                            (
-                              source,
-                              index
-                            ) => (
-
-                              <div
-                                key={`${source.document_id || source.url || source.file_name}-${index}`}
-                                className="rounded-xl border border-slate-800 bg-slate-900/20 px-4 py-3"
-                              >
-
-                                <div className="flex items-center gap-3">
-
-                                  <span className="rounded-md bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                    {
-                                      source.type
-                                    }
-                                  </span>
-
-                                  <div className="min-w-0">
-
-                                    {source.type ===
-                                      "web" &&
-                                    source.url ? (
-
-                                      <a
-                                        href={
-                                          source.url
-                                        }
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="truncate text-sm text-slate-400 hover:text-slate-200"
-                                      >
-                                        {source.title ||
-                                          source.url}
-                                      </a>
-
-                                    ) : (
-
-                                      <p className="truncate text-sm text-slate-400">
-                                        {source.file_name ||
-                                          source.source ||
-                                          "Local document"}
-                                      </p>
-
-                                    )}
-
-                                  </div>
-
-                                </div>
-
-                              </div>
-
-                            )
-                          )}
-
-                        </div>
-
+                        <p className="mt-1 text-xs text-zinc-600">
+                          Evidence used to produce this response
+                        </p>
                       </div>
-                    )}
 
-                </div>
-              )}
+                      <div className="space-y-2">
+                        {response.sources.map((source, index) => (
+                          <div
+                            key={`${source.url || source.source || index}-${index}`}
+                            className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-[10px] text-zinc-500">
+                                {index + 1}
+                              </span>
 
+                              <div className="min-w-0">
+                                <p className="text-sm text-zinc-300">
+                                  {formatSourceName(source)}
+                                </p>
+
+                                {source.type === "web" && source.url && (
+                                  <a
+                                    href={source.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-1 block truncate text-xs text-zinc-600 hover:text-zinc-400"
+                                  >
+                                    {source.url}
+                                  </a>
+                                )}
+
+                                {source.type === "local" &&
+                                  source.document_id && (
+                                    <p className="mt-1 truncate text-xs text-zinc-700">
+                                      Document ID: {source.document_id}
+                                    </p>
+                                  )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            )}
           </div>
-
         </section>
-
       </div>
-
     </main>
   );
 }
-
-
-/* ============================================================
-   METRIC COMPONENT
-============================================================ */
 
 function Metric({
   label,
@@ -1255,16 +875,38 @@ function Metric({
   value: string | number;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/20 px-3 py-3">
-
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+      <p className="text-[10px] uppercase tracking-wider text-zinc-600">
         {label}
       </p>
 
-      <p className="mt-1 text-sm font-semibold text-slate-300">
-        {value}
+      <p className="mt-2 text-xl font-semibold text-zinc-300">{value}</p>
+    </div>
+  );
+}
+
+function StatusCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: boolean | string | number | undefined;
+}) {
+  let displayValue = "—";
+
+  if (typeof value === "boolean") {
+    displayValue = value ? "Yes" : "No";
+  } else if (value !== undefined && value !== null) {
+    displayValue = String(value);
+  }
+
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+      <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+        {label}
       </p>
 
+      <p className="mt-2 text-sm font-medium text-zinc-300">{displayValue}</p>
     </div>
   );
 }
