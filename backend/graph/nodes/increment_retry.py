@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from graph.state import GraphState
+from backend.graph.state import GraphState
 
 
 def increment_retry(state: GraphState) -> Dict[str, Any]:
