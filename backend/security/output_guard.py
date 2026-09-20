@@ -8,7 +8,7 @@ configuration values before an answer is returned to the user.
 import re
 from dataclasses import dataclass
 
-from security.security_config import (
+from backend.security.security_config import (
     MAX_OUTPUT_LENGTH,
     SECRET_PATTERNS,
     SENSITIVE_ENVIRONMENT_VARIABLES,
