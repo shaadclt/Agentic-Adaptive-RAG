@@ -1,7 +1,7 @@
 from typing import Any, Dict
 
 from backend.graph.state import GraphState
-from ackend.sources import extract_sources
+from backend.sources import extract_sources
 
 
 def build_response(
