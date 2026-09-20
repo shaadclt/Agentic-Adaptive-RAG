@@ -6,7 +6,7 @@ from backend.evaluation import (
     EvaluationTracker,
 )
 
-from graph.graph import app
+from backend.graph.graph import app
 
 from backend.ingestion import (
     build_vectorstore,
