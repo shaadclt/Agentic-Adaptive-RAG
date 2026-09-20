@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 from langgraph.types import interrupt
 
-from graph.state import GraphState
+from backend.graph.state import GraphState
 
 
 def request_web_search_approval(
