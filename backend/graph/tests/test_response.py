@@ -1,6 +1,6 @@
 from langchain_core.documents import Document
 
-from graph.nodes.build_response import build_response
+from backend.graph.nodes.build_response import build_response
 from backend.response import RAGResponse
 
 
