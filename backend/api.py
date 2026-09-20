@@ -15,8 +15,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from evaluation import EvaluationResult, EvaluationTracker
-from ingestion import (
+from backend.evaluation import EvaluationResult, EvaluationTracker
+from backend.ingestion import (
     SUPPORTED_EXTENSIONS,
     build_vectorstore,
     delete_document,
