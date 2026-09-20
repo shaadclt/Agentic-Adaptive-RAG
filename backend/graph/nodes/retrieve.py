@@ -1,8 +1,8 @@
 import time
 from typing import Any, Dict
 
-from graph.state import GraphState
-from retrieval import retriever
+from backend.graph.state import GraphState
+from backend.retrieval import retriever
 
 
 MAX_RETRIEVAL_RETRIES = 2
