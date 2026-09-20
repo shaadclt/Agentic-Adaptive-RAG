@@ -1,8 +1,8 @@
 from typing import Any, Dict
 
-from graph.chains.generation import generation_chain
-from graph.context import format_documents
-from graph.state import GraphState
+from backend.graph.chains.generation import generation_chain
+from backend.graph.context import format_documents
+from backend.graph.state import GraphState
 
 
 def generate(state: GraphState) -> Dict[str, Any]:
