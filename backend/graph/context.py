@@ -2,7 +2,7 @@ from typing import List
 
 from langchain_core.documents import Document
 
-from security.content_guard import (
+from backend.security.content_guard import (
     wrap_untrusted_content,
 )
 
