@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from graph.state import GraphState
+from backend.graph.state import GraphState
 from sources import extract_sources
 
 
