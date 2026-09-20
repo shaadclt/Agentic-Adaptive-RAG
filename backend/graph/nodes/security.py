@@ -1,7 +1,7 @@
 from typing import Any, Dict
 
-from graph.state import GraphState
-from security.prompt_guard import check_prompt
+from backend.graph.state import GraphState
+from backend.security.prompt_guard import check_prompt
 
 
 SECURITY_BLOCK_MESSAGE = (
