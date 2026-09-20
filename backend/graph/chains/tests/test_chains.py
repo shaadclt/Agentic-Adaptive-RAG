@@ -1,7 +1,7 @@
-from graph.chains.answer_grader import answer_grader
-from graph.chains.hallucination_grader import hallucination_grader
-from graph.chains.retrieval_grader import retrieval_grader
-from graph.chains.router import RouteQuery, question_router
+from backend.graph.chains.answer_grader import answer_grader
+from backend.graph.chains.hallucination_grader import hallucination_grader
+from backend.graph.chains.retrieval_grader import retrieval_grader
+from backend.graph.chains.router import RouteQuery, question_router
 
 
 def normalize_binary_score(score) -> str:
