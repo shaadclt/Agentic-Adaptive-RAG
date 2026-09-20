@@ -1,13 +1,13 @@
 from unittest.mock import patch
 
-from graph.graph import (
+from backend.graph.graph import (
     MAX_GENERATION_RETRIES,
     app,
     decide_after_evaluation,
     decide_to_generate,
     route_question,
 )
-from graph.state import GraphState
+from backend.graph.state import GraphState
 
 
 def test_local_rag_path() -> None:
