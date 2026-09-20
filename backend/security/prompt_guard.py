@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from typing import List
 
-from security.security_config import (
+from backend.security.security_config import (
     MAX_QUESTION_LENGTH,
     PROMPT_INJECTION_PATTERNS,
 )
