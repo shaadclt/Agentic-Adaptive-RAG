@@ -31,7 +31,7 @@ from backend.observability import (
     clear_observability_history,
 )
 
-from graph.graph import app as rag_app
+from backend.graph.graph import app as rag_app
 
 
 load_dotenv()
