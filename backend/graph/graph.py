@@ -31,7 +31,7 @@ from backend.graph.nodes.web_search_rejected import (
 )
 
 from backend.graph.state import GraphState
-from retrieval import retriever
+from backend.retrieval import retriever
 
 
 MAX_GENERATION_RETRIES = 2
