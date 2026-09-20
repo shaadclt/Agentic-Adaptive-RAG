@@ -5,7 +5,7 @@ Security utilities for handling untrusted RAG and web content.
 import re
 from typing import Tuple
 
-from security.security_config import (
+from backend.security.security_config import (
     CONTENT_INJECTION_PATTERNS,
 )
 
