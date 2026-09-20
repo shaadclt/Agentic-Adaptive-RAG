@@ -1,13 +1,13 @@
-from security.content_guard import (
+from backend.security.content_guard import (
     detect_content_injection,
     wrap_untrusted_content,
 )
 
-from security.output_guard import (
+from backend.security.output_guard import (
     sanitize_output,
 )
 
-from security.prompt_guard import (
+from backend.security.prompt_guard import (
     check_prompt,
 )
 
