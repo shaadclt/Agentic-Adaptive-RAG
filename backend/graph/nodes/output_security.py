@@ -1,7 +1,7 @@
 from typing import Any, Dict
 
-from graph.state import GraphState
-from security.output_guard import sanitize_output
+from backend.graph.state import GraphState
+from backend.security.output_guard import sanitize_output
 
 
 def output_security_check(
