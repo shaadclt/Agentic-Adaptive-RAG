@@ -27,7 +27,7 @@ def test_local_rag_path() -> None:
     )()
 
     with patch(
-        "graph.graph.question_router",
+        "backend.graph.graph.question_router",
     ) as mock_router:
 
         mock_router.invoke.return_value = mock_route
@@ -75,7 +75,7 @@ def test_direct_web_search_route() -> None:
     )()
 
     with patch(
-        "graph.graph.question_router",
+        "backend.graph.graph.question_router",
     ) as mock_router:
 
         mock_router.invoke.return_value = mock_route
@@ -136,9 +136,9 @@ def test_generation_retries_when_answer_does_not_address_question() -> None:
 
 def test_generation_quality_gate_handles_uppercase_yes() -> None:
     with patch(
-        "graph.graph.hallucination_grader",
+        "backend.graph.graph.hallucination_grader",
     ) as mock_hallucination, patch(
-        "graph.graph.answer_grader",
+        "backend.graph.graph.answer_grader",
     ) as mock_answer:
 
         mock_hallucination.invoke.return_value = type(
@@ -153,7 +153,7 @@ def test_generation_quality_gate_handles_uppercase_yes() -> None:
             {"binary_score": "YES"},
         )()
 
-        from graph.graph import evaluate_generation
+        from backend.graph.graph import evaluate_generation
 
         state: GraphState = {
             "question": "What is Chroma?",
@@ -184,7 +184,7 @@ def test_local_knowledge_router_decides_local() -> None:
     )()
 
     with patch(
-        "graph.graph.question_router",
+        "backend.graph.graph.question_router",
     ) as mock_router:
 
         mock_router.invoke.return_value = mock_route
