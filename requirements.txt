@@ -14,3 +14,7 @@ langchain-chroma
 langchain-tavily==0.1.5
 langchain_aws
 langchain-google-genai
+fastapi
+uvicorn[standard]
+langchain-groq
+python-multipart
