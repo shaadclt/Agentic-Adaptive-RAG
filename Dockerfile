@@ -25,8 +25,6 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy backend application.
 COPY backend ./backend
 
-# Copy offline evaluation resources.
-COPY evaluation ./evaluation
 
 # Runtime directories.
 RUN mkdir -p \
