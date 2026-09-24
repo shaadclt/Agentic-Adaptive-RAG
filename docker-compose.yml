@@ -4,21 +4,37 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+
     container_name: agentic-rag-backend
+
     env_file:
       - .env
+
     ports:
       - "8000:8000"
+
     volumes:
       - ./.chroma:/app/.chroma
       - ./uploads:/app/uploads
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    tmpfs:
+      - /tmp
+
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       start_period: 30s
       retries: 3
+
     restart: unless-stopped
+
 
   frontend:
     build:
@@ -26,12 +42,28 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000
+
     container_name: agentic-rag-frontend
+
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+
     ports:
       - "3000:3000"
+
     depends_on:
       backend:
         condition: service_healthy
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
     restart: unless-stopped
