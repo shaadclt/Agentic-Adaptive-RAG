@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import uuid
 
 import json
+import zipfile
 import os
 import shutil
 import tempfile
@@ -14,6 +16,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from langgraph.types import Command
 
 from backend.evaluation import EvaluationResult, EvaluationTracker
 from backend.ingestion import (
@@ -560,6 +563,85 @@ def health() -> Dict[str, Any]:
 # ============================================================================
 
 
+def validate_uploaded_content(
+    filename: str,
+    contents: bytes,
+) -> tuple[bool, str]:
+    """
+    Validate uploaded content using the file extension and
+    basic content signatures/structure.
+
+    This is intentionally conservative. It is not a malware
+    scanner; it prevents obvious extension/content mismatches
+    and malformed supported document types.
+    """
+
+    extension = Path(filename).suffix.lower()
+
+    if extension not in SUPPORTED_EXTENSIONS:
+        return False, (
+            f"Unsupported file type: "
+            f"{extension or 'unknown'}"
+        )
+
+    if extension == ".pdf":
+        if not contents.startswith(b"%PDF-"):
+            return False, (
+                "File does not contain a valid PDF signature."
+            )
+
+        return True, ""
+
+    if extension == ".docx":
+        if not contents.startswith(b"PK"):
+            return False, (
+                "File does not contain a valid DOCX/ZIP signature."
+            )
+
+        try:
+            with zipfile.ZipFile(
+                io.BytesIO(contents)
+            ) as archive:
+                names = set(archive.namelist())
+
+                required_files = {
+                    "[Content_Types].xml",
+                    "word/document.xml",
+                }
+
+                if not required_files.issubset(names):
+                    return False, (
+                        "File does not contain the required DOCX structure."
+                    )
+
+        except zipfile.BadZipFile:
+            return False, (
+                "File is not a valid DOCX archive."
+            )
+
+        return True, ""
+
+    if extension in {".txt", ".md"}:
+        if b"\x00" in contents:
+            return False, (
+                "Text file contains binary data."
+            )
+
+        try:
+            contents.decode("utf-8")
+        except UnicodeDecodeError:
+            return False, (
+                "Text file is not valid UTF-8."
+            )
+
+        return True, ""
+
+    return False, (
+        f"Unsupported file type: {extension}"
+    )
+
+
+
 @api.get("/documents")
 def get_documents() -> Dict[str, Any]:
 
@@ -589,131 +671,138 @@ async def upload_documents(
 ) -> Dict[str, Any]:
 
     if not files:
-
         raise HTTPException(
             status_code=400,
             detail="No files were provided.",
         )
 
+    max_files = 5
+
+    if len(files) > max_files:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Maximum {max_files} files are allowed "
+                "per upload request."
+            ),
+        )
+
     uploaded: List[Dict[str, Any]] = []
-
     rejected: List[Dict[str, Any]] = []
-
     temp_paths: List[str] = []
 
     try:
-
         for uploaded_file in files:
+            original_filename = uploaded_file.filename or ""
 
-            filename = (
-                uploaded_file.filename
-                or ""
-            )
-
-            if not filename:
-
+            if not original_filename:
                 rejected.append(
                     {
-                        "file_name": filename,
-                        "reason": (
-                            "Missing filename."
-                        ),
+                        "file_name": "",
+                        "reason": "Missing filename.",
                     }
                 )
-
                 continue
 
-            extension = Path(
-                filename
-            ).suffix.lower()
+            normalized_filename = original_filename.replace(
+                "\\",
+                "/",
+            )
+            filename = Path(normalized_filename).name
 
-            if (
-                extension
-                not in SUPPORTED_EXTENSIONS
-            ):
-
+            if not filename or filename in {".", ".."}:
                 rejected.append(
                     {
-                        "file_name": filename,
-                        "reason": (
-                            "Unsupported file type. "
-                            "Supported types: "
-                            + ", ".join(
-                                sorted(
-                                    SUPPORTED_EXTENSIONS
-                                )
-                            )
-                        ),
+                        "file_name": original_filename,
+                        "reason": "Invalid filename.",
                     }
                 )
-
                 continue
 
-            contents = (
-                await uploaded_file.read()
-            )
+            extension = Path(filename).suffix.lower()
 
-            if (
-                len(contents)
-                > MAX_UPLOAD_SIZE_BYTES
-            ):
-
+            if extension not in SUPPORTED_EXTENSIONS:
                 rejected.append(
                     {
                         "file_name": filename,
                         "reason": (
-                            f"File exceeds the "
-                            f"{MAX_UPLOAD_SIZE_MB} MB "
-                            "limit."
+                            "Unsupported file type. Supported types: "
+                            + ", ".join(sorted(SUPPORTED_EXTENSIONS))
                         ),
                     }
                 )
+                continue
 
+            contents = await uploaded_file.read(
+                MAX_UPLOAD_SIZE_BYTES + 1
+            )
+
+            if len(contents) > MAX_UPLOAD_SIZE_BYTES:
+                rejected.append(
+                    {
+                        "file_name": filename,
+                        "reason": (
+                            f"File exceeds the {MAX_UPLOAD_SIZE_MB} MB limit."
+                        ),
+                    }
+                )
+                await uploaded_file.close()
+                continue
+
+            if not contents:
+                rejected.append(
+                    {
+                        "file_name": filename,
+                        "reason": "File is empty.",
+                    }
+                )
+                await uploaded_file.close()
+                continue
+
+            valid, validation_reason = validate_uploaded_content(
+                filename,
+                contents,
+            )
+
+            if not valid:
+                rejected.append(
+                    {
+                        "file_name": filename,
+                        "reason": validation_reason,
+                    }
+                )
+                await uploaded_file.close()
                 continue
 
             temp_dir = tempfile.mkdtemp(
                 prefix="agentic_rag_"
             )
 
-            safe_filename = Path(
-                filename
-            ).name
-
+            safe_filename = Path(filename).name
             temp_path = os.path.join(
                 temp_dir,
                 safe_filename,
             )
 
-            with open(
-                temp_path,
-                "wb",
-            ) as output_file:
+            with open(temp_path, "wb") as output_file:
+                output_file.write(contents)
 
-                output_file.write(
-                    contents
-                )
-
-            temp_paths.append(
-                temp_path
-            )
+            temp_paths.append(temp_path)
 
             uploaded.append(
                 {
                     "file_name": filename,
                     "temp_path": temp_path,
-                    "size_bytes": len(
-                        contents
-                    ),
+                    "size_bytes": len(contents),
                     "extension": extension,
                 }
             )
 
-        if not uploaded:
+            await uploaded_file.close()
 
+        if not uploaded:
             return {
-                "message": (
-                    "No files were uploaded."
-                ),
+                "message": "No files were uploaded.",
                 "uploaded": [],
                 "rejected": rejected,
             }
@@ -727,20 +816,13 @@ async def upload_documents(
 
         return {
             "message": (
-                f"Successfully processed "
-                f"{len(uploaded)} file(s)."
+                f"Successfully processed {len(uploaded)} file(s)."
             ),
             "uploaded": [
                 {
-                    "file_name": item[
-                        "file_name"
-                    ],
-                    "size_bytes": item[
-                        "size_bytes"
-                    ],
-                    "extension": item[
-                        "extension"
-                    ],
+                    "file_name": item["file_name"],
+                    "size_bytes": item["size_bytes"],
+                    "extension": item["extension"],
                 }
                 for item in uploaded
             ],
@@ -749,38 +831,26 @@ async def upload_documents(
         }
 
     except Exception as exc:
-
         raise HTTPException(
             status_code=500,
-            detail=f"Upload failed: {exc}",
-        )
+            detail="Upload failed while processing the documents.",
+        ) from exc
 
     finally:
-
         for temp_path in temp_paths:
-
             try:
+                temp_dir = os.path.dirname(temp_path)
 
-                temp_dir = os.path.dirname(
-                    temp_path
-                )
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
-                if os.path.exists(
-                    temp_path
-                ):
-                    os.remove(
-                        temp_path
-                    )
-
-                if os.path.isdir(
-                    temp_dir
-                ):
+                if os.path.isdir(temp_dir):
                     shutil.rmtree(
                         temp_dir,
                         ignore_errors=True,
                     )
 
-            except Exception:
+            except OSError:
                 pass
 
 
@@ -840,11 +910,12 @@ async def chat(request: ChatRequest):
 
     observer = RunObserver(question)
     start_time = perf_counter()
+    thread_id = request.thread_id or str(uuid.uuid4())
 
     try:
         config = {
             "configurable": {
-                "thread_id": str(uuid.uuid4()),
+                "thread_id": thread_id,
             }
         }
 
@@ -856,6 +927,88 @@ async def chat(request: ChatRequest):
         )
 
         latency = perf_counter() - start_time
+        result = dict(result or {})
+
+        # LangGraph returns a __interrupt__ entry when the workflow
+        # pauses for human approval. This is a pending state, not a
+        # completed answer.
+        interrupts = result.get("__interrupt__") or []
+
+        if interrupts:
+            interrupt_value = getattr(
+                interrupts[0],
+                "value",
+                interrupts[0],
+            )
+
+            if not isinstance(interrupt_value, dict):
+                interrupt_value = {
+                    "type": "web_search_approval",
+                    "title": "Web search approval required",
+                    "message": str(interrupt_value),
+                }
+
+            route = normalise_route(result)
+
+            observer.record(
+                route=route,
+                retrieved_documents=safe_int(
+                    result.get("retrieved_documents", 0)
+                ),
+                relevant_documents=safe_int(
+                    result.get("relevant_documents", 0)
+                ),
+                grounded=False,
+                answers_question=False,
+                retry_count=safe_int(
+                    result.get("retry_count", 0)
+                ),
+                latency_seconds=latency,
+                sources=[],
+                success=True,
+                hitl_status="pending",
+                hitl_reason=safe_str(
+                    interrupt_value.get(
+                        "message",
+                        "Human approval is required before web search.",
+                    )
+                ),
+            )
+
+            return {
+                "status": "approval_required",
+                "thread_id": thread_id,
+                "question": question,
+                "answer": "",
+                "generation": "",
+                "route": "web",
+                "sources": [],
+                "retrieved_documents": safe_int(
+                    result.get("retrieved_documents", 0)
+                ),
+                "relevant_documents": safe_int(
+                    result.get("relevant_documents", 0)
+                ),
+                "grounded": False,
+                "answers_question": False,
+                "retry_count": safe_int(
+                    result.get("retry_count", 0)
+                ),
+                "latency_seconds": round(latency, 4),
+                "hitl_status": "pending",
+                "hitl_reason": safe_str(
+                    interrupt_value.get(
+                        "message",
+                        "Human approval is required before web search.",
+                    )
+                ),
+                "hitl": interrupt_value,
+                "security_status": result.get("security_status"),
+                "security_reason": result.get("security_reason"),
+                "security_redactions": result.get(
+                    "security_redactions", []
+                ) or [],
+            }
 
         sources = result.get("sources", [])
 
@@ -866,35 +1019,30 @@ async def chat(request: ChatRequest):
                     "unknown",
                 )
             ),
-
             retrieved_documents=safe_int(
                 result.get(
                     "retrieved_documents",
                     0,
                 )
             ),
-
             relevant_documents=safe_int(
                 result.get(
                     "relevant_documents",
                     0,
                 )
             ),
-
             grounded=bool(
                 result.get(
                     "grounded",
                     False,
                 )
             ),
-
             answers_question=bool(
                 result.get(
                     "answers_question",
                     False,
                 )
             ),
-
             retry_count=int(
                 result.get(
                     "retry_count",
@@ -902,13 +1050,9 @@ async def chat(request: ChatRequest):
                 )
                 or 0
             ),
-
             latency_seconds=latency,
-
             sources=sources,
-
             success=True,
-
             hitl_status=str(
                 result.get(
                     "hitl_status",
@@ -916,7 +1060,6 @@ async def chat(request: ChatRequest):
                 )
                 or ""
             ),
-
             hitl_reason=str(
                 result.get(
                     "hitl_reason",
@@ -932,7 +1075,45 @@ async def chat(request: ChatRequest):
             latency_seconds=latency,
         )
 
-        return result
+        return {
+            "status": "completed",
+            "thread_id": thread_id,
+            "question": question,
+            "answer": safe_str(
+                result.get(
+                    "answer",
+                    result.get("generation", ""),
+                )
+            ),
+            "generation": safe_str(
+                result.get("generation", "")
+            ),
+            "route": normalise_route(result),
+            "sources": sources or [],
+            "retrieved_documents": safe_int(
+                result.get("retrieved_documents", len(result.get("documents", []) or []))
+            ),
+            "relevant_documents": safe_int(
+                result.get("relevant_documents", 0)
+            ),
+            "grounded": safe_bool(
+                result.get("grounded", False)
+            ),
+            "answers_question": safe_bool(
+                result.get("answers_question", False)
+            ),
+            "retry_count": safe_int(
+                result.get("retry_count", 0)
+            ),
+            "latency_seconds": round(latency, 4),
+            "hitl_status": result.get("hitl_status"),
+            "hitl_reason": result.get("hitl_reason"),
+            "security_status": result.get("security_status"),
+            "security_reason": result.get("security_reason"),
+            "security_redactions": result.get(
+                "security_redactions", []
+            ) or [],
+        }
 
     except Exception as exc:
         latency = perf_counter() - start_time
@@ -949,7 +1130,7 @@ async def chat(request: ChatRequest):
             detail=str(exc),
         )
 
-        
+
 # ============================================================================
 # HITL APPROVAL
 # ============================================================================
@@ -963,7 +1144,6 @@ def chat_approval(
     thread_id = request.thread_id
 
     if not thread_id:
-
         raise HTTPException(
             status_code=400,
             detail="thread_id is required.",
@@ -972,35 +1152,74 @@ def chat_approval(
     start_time = perf_counter()
 
     try:
-
         config = {
             "configurable": {
                 "thread_id": thread_id,
             }
         }
 
+        # IMPORTANT: an interrupted LangGraph workflow must be resumed
+        # with Command(resume=...), not with a normal state dictionary.
         result = rag_app.invoke(
-            {
-                "web_search_approved": (
-                    request.approved
-                ),
-                "hitl_status": (
-                    "approved"
-                    if request.approved
-                    else "rejected"
-                ),
-            },
+            Command(resume=request.approved),
             config=config,
         )
 
-        latency = (
-            perf_counter()
-            - start_time
-        )
+        latency = perf_counter() - start_time
+        result = dict(result or {})
 
-        result = dict(
-            result or {}
-        )
+        # If another interrupt is returned, surface it to the client
+        # instead of pretending that an answer was completed.
+        interrupts = result.get("__interrupt__") or []
+
+        if interrupts:
+            interrupt_value = getattr(
+                interrupts[0],
+                "value",
+                interrupts[0],
+            )
+
+            if not isinstance(interrupt_value, dict):
+                interrupt_value = {
+                    "type": "web_search_approval",
+                    "title": "Web search approval required",
+                    "message": str(interrupt_value),
+                }
+
+            return {
+                "status": "approval_required",
+                "thread_id": thread_id,
+                "question": safe_str(result.get("question", "")),
+                "answer": "",
+                "generation": "",
+                "route": "web",
+                "sources": [],
+                "retrieved_documents": safe_int(
+                    result.get("retrieved_documents", 0)
+                ),
+                "relevant_documents": safe_int(
+                    result.get("relevant_documents", 0)
+                ),
+                "grounded": False,
+                "answers_question": False,
+                "retry_count": safe_int(
+                    result.get("retry_count", 0)
+                ),
+                "latency_seconds": round(latency, 4),
+                "hitl_status": "pending",
+                "hitl_reason": safe_str(
+                    interrupt_value.get(
+                        "message",
+                        "Human approval is required.",
+                    )
+                ),
+                "hitl": interrupt_value,
+                "security_status": result.get("security_status"),
+                "security_reason": result.get("security_reason"),
+                "security_redactions": result.get(
+                    "security_redactions", []
+                ) or [],
+            }
 
         question = safe_str(
             result.get(
@@ -1040,8 +1259,7 @@ def chat_approval(
             "sources": result.get(
                 "sources",
                 [],
-            )
-            or [],
+            ) or [],
             "retrieved_documents": safe_int(
                 result.get(
                     "retrieved_documents",
@@ -1049,8 +1267,7 @@ def chat_approval(
                         result.get(
                             "documents",
                             [],
-                        )
-                        or []
+                        ) or []
                     ),
                 )
             ),
@@ -1098,13 +1315,11 @@ def chat_approval(
                 result.get(
                     "security_redactions",
                     [],
-                )
-                or []
+                ) or []
             ),
         }
 
     except Exception as exc:
-
         raise HTTPException(
             status_code=500,
             detail=str(exc),
