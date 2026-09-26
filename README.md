@@ -2,7 +2,6 @@
 
 > A production-oriented Agentic RAG system built with LangGraph that dynamically routes queries between local knowledge retrieval and web search, validates retrieval and generated answers, detects hallucinations, applies security controls, and provides evaluation and observability.
 
----
 
 ## Overview
 
@@ -23,7 +22,6 @@ Instead of always performing vector search, the system evaluates the user's ques
 
 The project includes a **FastAPI backend**, **Next.js frontend**, **LangGraph agent workflow**, vector-based retrieval, LLM-based grading, security controls, evaluation tracking, observability, and Docker deployment.
 
----
 
 ## Key Features
 
@@ -76,7 +74,6 @@ It dynamically routes requests based on the question:
                          └──────► Generation
 ```
 
----
 
 ## Architecture
 
@@ -122,7 +119,6 @@ It dynamically routes requests based on the question:
                     Evaluation & Observability
 ```
 
----
 
 # Core Workflow
 
@@ -143,7 +139,6 @@ Router
 
 This prevents unnecessary web searches when relevant uploaded knowledge is available.
 
----
 
 ## 2. Local Document Retrieval
 
@@ -158,7 +153,6 @@ Supported document formats include:
 
 Documents are processed and added to the application's vector-based retrieval layer.
 
----
 
 ## 3. Retrieval Grading
 
@@ -180,7 +174,6 @@ Question + Retrieved Document
 
 This allows the system to recognize when vector retrieval does not provide useful evidence.
 
----
 
 ## 4. Web Search Fallback
 
@@ -202,7 +195,6 @@ Local Knowledge
 
 The project also supports human approval around web-search execution.
 
----
 
 ## 5. Hallucination Detection
 
@@ -224,7 +216,6 @@ Grounded  Not Grounded
 
 This provides a quality-control layer between generation and the final response.
 
----
 
 ## 6. Answer Quality Validation
 
@@ -246,7 +237,6 @@ Response    Retry
 
 Generation therefore has multiple quality gates rather than simply returning the first LLM response.
 
----
 
 # Security
 
@@ -286,7 +276,6 @@ The output layer can redact sensitive information such as:
 
 Responses are constrained to prevent uncontrolled output.
 
----
 
 # Evaluation
 
@@ -304,7 +293,6 @@ Evaluation covers:
 
 Evaluation results can be persisted for later analysis.
 
----
 
 # Observability
 
@@ -323,7 +311,6 @@ Recorded information includes:
 
 This makes it possible to inspect how the agent arrived at a response rather than treating the LLM as a black box.
 
----
 
 # Human-in-the-Loop
 
@@ -344,7 +331,6 @@ Web Search     Rejection
 
 This provides an additional control point before external retrieval is executed.
 
----
 
 # Technology Stack
 
@@ -390,7 +376,6 @@ This provides an additional control point before external retrieval is executed.
 
 - Pytest
 
----
 
 # Project Structure
 
@@ -463,7 +448,6 @@ Agentic-Adaptive-RAG/
 └── README.md
 ```
 
----
 
 # Installation
 
@@ -477,7 +461,6 @@ Make sure you have:
 - Git
 - A Groq API key
 
----
 
 # Environment Variables
 
@@ -497,7 +480,6 @@ Use `.env.example` as the template for the complete configuration.
 
 **Never commit your real API key to Git.**
 
----
 
 # Running Locally
 
@@ -517,7 +499,7 @@ python -m venv .venv
 Activate it:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+.venv\Scripts\Activate
 ```
 
 ## 3. Install dependencies
@@ -570,7 +552,6 @@ Frontend:
 http://localhost:3000
 ```
 
----
 
 # Running with Docker
 
@@ -627,7 +608,6 @@ Stop the application:
 docker compose down
 ```
 
----
 
 # API
 
@@ -646,7 +626,6 @@ Interactive API documentation is available through:
 http://localhost:8000/docs
 ```
 
----
 
 # Testing
 
@@ -686,7 +665,6 @@ The test suite covers:
 ✓ Output protection
 ```
 
----
 
 # Example Workflow
 
@@ -739,7 +717,6 @@ Final Response
 
 Use the observability interface to inspect the execution path and evaluation information.
 
----
 
 # Why This Project Is Agentic
 
@@ -802,7 +779,6 @@ The system therefore combines:
 
 within a stateful LangGraph workflow.
 
----
 
 # Engineering Highlights
 
@@ -830,7 +806,6 @@ Agent execution information is recorded so the behavior of the system can be ana
 
 Both frontend and backend are containerized and orchestrated using Docker Compose.
 
----
 
 # Testing Philosophy
 
@@ -849,7 +824,6 @@ Security
 Evaluation
 ```
 
----
 
 # Future Improvements
 
@@ -875,7 +849,6 @@ Potential future production improvements include:
 
 These are intentionally treated as future production-hardening improvements rather than prerequisites for the current system.
 
----
 
 # Project Status
 
@@ -900,30 +873,11 @@ These are intentionally treated as future production-hardening improvements rath
 | Docker frontend | ✅ |
 | Automated tests | ✅ 33 passed |
 
----
 
-# Resume Description
-
-### Agentic Adaptive RAG
-
-**Agentic AI / Generative AI Project**
-
-- Built a LangGraph-based Agentic RAG system with adaptive routing between local vector retrieval and web search based on query requirements and retrieval quality.
-- Implemented retrieval grading, hallucination detection, answer-quality validation, and automated generation retries to improve response reliability.
-- Developed security controls for prompt injection, jailbreak attempts, document-based instruction injection, and sensitive secret leakage.
-- Added evaluation tracking and execution observability covering routing, retrieval, grounding, retries, latency, and source usage.
-- Developed a FastAPI backend and Next.js frontend with Dockerized deployment using Docker Compose.
-- Achieved **33/33 automated tests passing** across agent workflows, evaluation, response validation, and security controls.
-
----
 
 # License
 
 This project is intended as a portfolio and learning project.
-
-Add your preferred license here if the repository is published publicly.
-
----
 
 # Author
 
