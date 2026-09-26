@@ -1,292 +1,937 @@
-# 🤖 Agentic Adaptive RAG with LangGraph
+# Agentic Adaptive RAG
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-enabled-green.svg)](https://langchain-ai.github.io/langgraph/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-**Agentic Adaptive RAG is a production-ready framework for building self-correcting, reasoning-based LLM systems that dynamically choose between retrieval, web search, and generation.**
-
-> Build intelligent RAG systems that know when to retrieve documents, search the web, or generate responses directly
-
-An advanced Retrieval-Augmented Generation (RAG) system that intelligently integrates dynamic query analysis with self-correcting mechanisms to optimize response accuracy. Unlike traditional RAG approaches, this system adapts its strategy based on query complexity and context.
-
-## 🌟 Key Features
-
-- **🧠 Intelligent Query Routing**: Automatically determines whether to use local documents, web search, or direct LLM generation
-- **📊 Multi-Stage Quality Assurance**: Document relevance assessment, hallucination detection, and answer quality evaluation
-- **🔄 Self-Correcting Mechanisms**: Automatically triggers additional retrieval or regeneration when quality thresholds aren't met
-- **🌐 Hybrid Knowledge Sources**: Seamlessly combines local vector store with real-time web search
-- **⚡ Production-Ready**: Built with LangGraph for robust state management and workflow orchestration
-
-## 🏗️ System Architecture
-
-The system implements three different retrieval strategies based on query complexity:
-
-- **No Retrieval**: For queries answerable from parametric knowledge
-- **Single-Step Retrieval**: For simple queries requiring document lookup
-- **Multi-Hop Retrieval**: For complex queries requiring reasoning across multiple sources
-
-<img width="2607" height="3575" alt="RAG Query Pipeline with-2025-12-31-083543" src="https://github.com/user-attachments/assets/937e752d-ce51-43e6-84a3-54eca371b6de" />
-
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- UV package manager (recommended) or pip
-
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/your-username/Agentic-Adaptive-RAG.git
-cd Agentic-Adaptive-RAG
-```
-
-2. **Set up virtual environment with UV**
-```bash
-# Install UV if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create and activate virtual environment
-uv venv --python 3.10
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. **Install dependencies**
-```bash
-uv pip install -r requirements.txt
-```
-
-4. **Configure environment variables**
-Create a `.env` file in the root directory:
-```env
-GOOGLE_API_KEY=your_google_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
-LANGCHAIN_API_KEY=your_langchain_api_key_here
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_PROJECT=agentic-rag
-```
-
-### Getting Your API Keys
-
-- **Google AI API Key**: Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
-- **Tavily API Key**: Sign up at [Tavily](https://tavily.com/)
-- **LangChain API Key**: Get it from [LangSmith](https://smith.langchain.com/)
-
-## 🎯 Usage
-
-### 1. Initialize the Vector Database
-
-```bash
-python ingestion.py
-```
-
-This creates a local Chroma vector store with documents about AI agents, prompt engineering, and adversarial attacks.
-
-### 2. Run the Interactive Chatbot
-
-```bash
-python main.py
-```
-
-### 3. Example Interaction
-
-```
-🤖 Advanced RAG Chatbot
-Welcome! Ask me anything or type 'quit', 'exit', or 'bye' to leave.
-
-💬 You: what is agent memory?
-🤔 Bot: Thinking...
----ROUTE QUESTION---
----ROUTE QUESTION TO RAG---
----RETRIEVE---
----CHECK DOCUMENT RELEVANCE TO QUESTION---
----GRADE: DOCUMENT RELEVANT---
----ASSESS GRADED DOCUMENTS---
----DECISION: GENERATE---
----GENERATE---
----CHECK HALLUCINATIONS---
----DECISION: GENERATION IS GROUNDED IN DOCUMENTS---
----GRADE GENERATION vs QUESTION---
----DECISION: GENERATION ADDRESSES QUESTION---
-
-🤖 Bot: Agent memory is a key component of AI systems that enables agents to store, retrieve, and utilize information across interactions...
-```
-
-## 🧪 Testing
-
-Run the comprehensive test suite:
-
-```bash
-python -m pytest . -s -v
-```
-
-The test suite validates:
-- Document relevance grading
-- Hallucination detection
-- Query routing logic
-- Generation quality
-- End-to-end workflow
-
-## 📂 Project Structure
-
-```
-building-adaptive-rag/
-├── graph/
-│   ├── chains/                 # LLM processing chains
-│   │   ├── tests/
-│   │   │   ├── __init__.py
-│   │   │   └── test_chains.py
-│   │   ├── __init__.py
-│   │   ├── answer_grader.py    # Answer quality evaluation
-│   │   ├── generation.py       # Response generation
-│   │   ├── hallucination_grader.py  # Hallucination detection
-│   │   ├── retrieval_grader.py # Document relevance scoring
-│   │   └── router.py           # Query routing logic
-│   ├── nodes/                  # Workflow nodes
-│   │   ├── __init__.py
-│   │   ├── generate.py         # Generation node
-│   │   ├── grade_documents.py  # Document grading node
-│   │   ├── retrieve.py         # Retrieval node
-│   │   └── web_search.py       # Web search node
-│   ├── __init__.py
-│   ├── consts.py              # System constants
-│   ├── graph.py               # Main workflow orchestration
-│   └── state.py               # State management
-├── static/                     # Assets and diagrams
-├── .env                       # Environment variables
-├── .gitignore
-├── ingestion.py               # Document ingestion pipeline
-├── main.py                    # Application entry point
-├── model.py                   # Model configurations
-├── README.md
-└── requirements.txt
-```
-
-## 🔧 Key Components
-
-### State Management
-The system uses a `GraphState` TypedDict that flows through all workflow nodes:
-- `question`: User's input query
-- `generation`: LLM's response
-- `web_search`: Boolean flag for web search necessity
-- `documents`: Retrieved documents from local and web sources
-
-### Workflow Nodes
-
-1. **Query Router**: Determines optimal information source (vectorstore vs. web search)
-2. **Document Retriever**: Fetches relevant documents from local vector store
-3. **Document Grader**: Evaluates document relevance and triggers web search if needed
-4. **Web Search**: Queries external sources for additional information
-5. **Generator**: Creates responses using retrieved context
-6. **Quality Graders**: Assess hallucinations and answer relevance
-
-### Decision Logic
-
-The system implements intelligent decision-making at multiple points:
-- Routes queries based on content domain
-- Grades document relevance and triggers web search for insufficient results
-- Detects hallucinations and regenerates responses when needed
-- Evaluates answer quality and seeks additional information if required
-
-## 🛠️ Configuration
-
-### Model Configuration
-
-Edit `model.py` to customize your language and embedding models:
-
-```python
-# Language Model Options
-from langchain_aws import ChatBedrock
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-llm_model = ChatBedrock(model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
-embed_model = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-```
-
-### Document Sources
-
-Customize the knowledge base by editing the URLs in `ingestion.py`:
-
-```python
-urls = [
-    "https://lilianweng.github.io/posts/2023-06-23-agent/",
-    "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
-    "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
-]
-```
-
-## 📈 Performance Optimization
-
-- **Chunk Size**: Optimized at 250 tokens for better embedding quality
-- **Retrieval Limit**: Configurable number of documents retrieved
-- **Web Search Results**: Limited to 3 results for efficiency
-- **Caching**: Persistent Chroma vector store for faster subsequent queries
-
-## 🔬 Advanced Features
-
-### Quality Assurance Pipeline
-
-1. **Document Relevance Scoring**: Binary classification of document relevance
-2. **Hallucination Detection**: Verification that responses are grounded in evidence
-3. **Answer Quality Assessment**: Evaluation of response completeness and relevance
-
-### Adaptive Routing
-
-The system intelligently routes queries based on:
-- Content domain analysis
-- Query complexity assessment
-- Available knowledge sources
-- Previous retrieval success rates
-
-## 🚧 Future Enhancements
-
-- [ ] **LLM Fallback State**: Direct LLM responses for conversational queries
-- [ ] **Enhanced Router**: Three-way routing (vectorstore/websearch/llm_fallback)
-- [ ] **Multi-Modal Support**: Image and document understanding
-- [ ] **Conversation Memory**: Context preservation across interactions
-- [ ] **Custom Evaluation Metrics**: Domain-specific quality assessment
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
-- [LangChain](https://github.com/langchain-ai/langchain) for the foundational RAG framework
-- [LangGraph](https://github.com/langchain-ai/langgraph) for stateful workflow orchestration
-- [Mistral AI](https://mistral.ai/) for inspiration and research contributions
-- Research paper: "Adaptive RAG" by Soyeong Jeong et al., 2024
-
-## 📊 Citation
-
-If you use this project in your research, please cite:
-
-```bibtex
-@software{agentic_adaptive_rag,
-  title={Agentic Adaptive RAG with LangGraph},
-  author={Mohamed Shaad},
-  year={2025},
-  url={https://github.com/shaadclt/Agentic-Adaptive-RAG}
-}
-```
-
-## 📧 Contact
-
-- **Author**: Mohamed Shaad
-- **LinkedIn**: [Connect on LinkedIn](https://linkedin.com/in/mshaadk)
+> A production-oriented Agentic RAG system built with LangGraph that dynamically routes queries between local knowledge retrieval and web search, validates retrieval and generated answers, detects hallucinations, applies security controls, and provides evaluation and observability.
 
 ---
 
-⭐ **Star this repository if you find it helpful!**
+## Overview
+
+**Agentic Adaptive RAG** is an end-to-end Retrieval-Augmented Generation system designed around an agentic workflow rather than a fixed retrieval pipeline.
+
+Instead of always performing vector search, the system evaluates the user's question and dynamically determines the appropriate path:
+
+- Retrieve information from uploaded documents
+- Fall back to web search when local knowledge is insufficient
+- Generate an answer from trusted context
+- Evaluate whether retrieved documents are relevant
+- Check whether the generated answer is grounded
+- Verify whether the answer actually addresses the question
+- Retry generation when quality gates fail
+- Record evaluation and observability information for each run
+- Apply security controls against prompt injection and sensitive information leakage
+- Support human approval before web search when required
+
+The project includes a **FastAPI backend**, **Next.js frontend**, **LangGraph agent workflow**, vector-based retrieval, LLM-based grading, security controls, evaluation tracking, observability, and Docker deployment.
+
+---
+
+## Key Features
+
+### Agentic Adaptive Retrieval
+
+The system does not blindly retrieve documents for every query.
+
+It dynamically routes requests based on the question:
+
+```text
+                    User Question
+                         │
+                         ▼
+                  Security Checks
+                         │
+                         ▼
+                   Query Router
+                    /         \
+                   /           \
+                  ▼             ▼
+          Local Knowledge     Web Search
+             Retrieval        (when needed)
+                  │             │
+                  ▼             ▼
+           Retrieval Grader     │
+                  │             │
+          ┌───────┴───────┐     │
+          │               │     │
+       Relevant        Not Relevant
+          │               │     │
+          │               └─────┘
+          │                   │
+          └─────────┬─────────┘
+                    ▼
+                Generation
+                    │
+                    ▼
+          Hallucination Grader
+                    │
+                    ▼
+              Answer Grader
+                    │
+              ┌─────┴─────┐
+              │           │
+             Pass        Fail
+              │           │
+              ▼           ▼
+           Response     Retry
+                         │
+                         └──────► Generation
+```
+
+---
+
+## Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                         Next.js UI                           │
+│                                                              │
+│  Chat • Document Upload • Evaluation • Observability         │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       FastAPI Backend                         │
+│                                                              │
+│  API • Uploads • Chat • Evaluation • Observability           │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       Security Layer                          │
+│                                                              │
+│  Prompt Injection • Jailbreak Detection • Secret Redaction  │
+│  Document Injection Detection • Output Protection           │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                        LangGraph                              │
+│                                                              │
+│  Router → Retrieve → Grade → Generate → Validate → Retry     │
+│                 │                                            │
+│                 └──────────────► Web Search                   │
+└───────────────┬───────────────────────────────┬──────────────┘
+                │                               │
+                ▼                               ▼
+       Vector Store / RAG                  Web Search
+                │                               │
+                └───────────────┬───────────────┘
+                                ▼
+                           LLM / Groq
+                                │
+                                ▼
+                    Evaluation & Observability
+```
+
+---
+
+# Core Workflow
+
+## 1. Query Routing
+
+The system first determines whether the question can be answered using the available local knowledge or requires external information.
+
+```text
+Question
+   │
+   ▼
+Router
+   │
+   ├── Local knowledge
+   │
+   └── Web search
+```
+
+This prevents unnecessary web searches when relevant uploaded knowledge is available.
+
+---
+
+## 2. Local Document Retrieval
+
+Users can provide their own documents rather than relying on hardcoded knowledge sources.
+
+Supported document formats include:
+
+- PDF
+- DOCX
+- TXT
+- Markdown
+
+Documents are processed and added to the application's vector-based retrieval layer.
+
+---
+
+## 3. Retrieval Grading
+
+Retrieved documents are evaluated for relevance to the user's question.
+
+```text
+Question + Retrieved Document
+            │
+            ▼
+      Retrieval Grader
+            │
+       ┌────┴────┐
+       ▼         ▼
+     Relevant   Irrelevant
+       │         │
+       ▼         ▼
+   Generation  Web Search
+```
+
+This allows the system to recognize when vector retrieval does not provide useful evidence.
+
+---
+
+## 4. Web Search Fallback
+
+When local retrieval is insufficient, the workflow can route the request to web search.
+
+```text
+Local Knowledge
+      │
+      ├── Sufficient ──► Generate
+      │
+      └── Insufficient
+               │
+               ▼
+          Web Search
+               │
+               ▼
+            Generate
+```
+
+The project also supports human approval around web-search execution.
+
+---
+
+## 5. Hallucination Detection
+
+Generated answers are checked against their available context.
+
+```text
+Generated Answer
+       │
+       ▼
+Hallucination Grader
+       │
+   ┌───┴───┐
+   ▼       ▼
+Grounded  Not Grounded
+   │          │
+   ▼          ▼
+ Continue    Retry
+```
+
+This provides a quality-control layer between generation and the final response.
+
+---
+
+## 6. Answer Quality Validation
+
+The system also evaluates whether the generated answer actually addresses the original question.
+
+```text
+Question + Answer
+       │
+       ▼
+ Answer Grader
+       │
+   ┌───┴───┐
+   ▼       ▼
+   Yes      No
+   │         │
+   ▼         ▼
+Response    Retry
+```
+
+Generation therefore has multiple quality gates rather than simply returning the first LLM response.
+
+---
+
+# Security
+
+Security is integrated into the application rather than treated as an external concern.
+
+Implemented controls include:
+
+### Prompt Injection Detection
+
+Detects malicious instructions attempting to manipulate the agent.
+
+### System Prompt Extraction Protection
+
+Detects attempts to retrieve hidden system instructions.
+
+### Jailbreak Detection
+
+Identifies common attempts to bypass model or application restrictions.
+
+### Document Injection Detection
+
+Uploaded or retrieved content is treated as untrusted information rather than trusted instructions.
+
+### Untrusted Content Handling
+
+External content is wrapped and handled separately from trusted application instructions.
+
+### Output Protection
+
+The output layer can redact sensitive information such as:
+
+- API keys
+- Groq secrets
+- Environment secrets
+
+### Output Length Protection
+
+Responses are constrained to prevent uncontrolled output.
+
+---
+
+# Evaluation
+
+The project includes automated evaluation components for the RAG and agent workflow.
+
+Evaluation covers:
+
+- Retrieval quality
+- Hallucination/grounding
+- Answer relevance
+- Routing behavior
+- Generation retry behavior
+- Response validation
+- Evaluation tracking
+
+Evaluation results can be persisted for later analysis.
+
+---
+
+# Observability
+
+The application includes an observability layer for tracking agent executions.
+
+Recorded information includes:
+
+- Selected route
+- Number of retrieved documents
+- Grounding results
+- Retry count
+- Latency
+- Source counts
+- Human-in-the-loop usage
+- Evaluation information
+
+This makes it possible to inspect how the agent arrived at a response rather than treating the LLM as a black box.
+
+---
+
+# Human-in-the-Loop
+
+The architecture includes a human approval step for web-search execution.
+
+```text
+Agent decides Web Search
+          │
+          ▼
+     Approval Step
+       /       \
+      /         \
+ Approve       Reject
+    │             │
+    ▼             ▼
+Web Search     Rejection
+```
+
+This provides an additional control point before external retrieval is executed.
+
+---
+
+# Technology Stack
+
+## Backend
+
+- Python
+- FastAPI
+- LangGraph
+- LangChain
+- Groq
+- Pydantic
+
+## AI / ML
+
+- Retrieval-Augmented Generation
+- Agentic workflows
+- LLM-based grading
+- Hallucination detection
+- Prompt engineering
+- Embeddings
+- Vector search
+
+## Storage
+
+- Chroma
+- Document storage
+- Evaluation history
+- Observability history
+
+## Frontend
+
+- Next.js
+- React
+- TypeScript
+
+## Deployment
+
+- Docker
+- Docker Compose
+- Uvicorn
+
+## Testing
+
+- Pytest
+
+---
+
+# Project Structure
+
+```text
+Agentic-Adaptive-RAG/
+│
+├── backend/
+│   ├── api.py
+│   ├── config.py
+│   ├── model.py
+│   ├── ingestion.py
+│   ├── retrieval.py
+│   ├── response.py
+│   ├── sources.py
+│   ├── evaluation.py
+│   ├── observability.py
+│   ├── main.py
+│   │
+│   ├── graph/
+│   │   ├── graph.py
+│   │   ├── state.py
+│   │   ├── consts.py
+│   │   ├── context.py
+│   │   │
+│   │   ├── chains/
+│   │   │   ├── answer_grader.py
+│   │   │   ├── generation.py
+│   │   │   ├── hallucination_grader.py
+│   │   │   ├── retrieval_grader.py
+│   │   │   └── router.py
+│   │   │
+│   │   └── nodes/
+│   │       ├── build_response.py
+│   │       ├── generate.py
+│   │       ├── grade_documents.py
+│   │       ├── increment_retry.py
+│   │       ├── retrieve.py
+│   │       ├── web_search.py
+│   │       ├── web_search_approval.py
+│   │       └── web_search_rejected.py
+│   │
+│   └── security/
+│       ├── content_guard.py
+│       ├── output_guard.py
+│       ├── prompt_guard.py
+│       ├── security_config.py
+│       └── tests/
+│
+├── evaluation/
+│   ├── benchmarks/
+│   ├── results/
+│   └── ragas/
+│
+├── frontend/
+│   ├── app/
+│   ├── components/
+│   ├── public/
+│   ├── Dockerfile
+│   └── next.config.ts
+│
+├── data/
+├── uploads/
+│
+├── .chroma/
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .env.example
+├── .gitignore
+└── README.md
+```
+
+---
+
+# Installation
+
+## Prerequisites
+
+Make sure you have:
+
+- Python 3.11+
+- Node.js 20+
+- Docker Desktop
+- Git
+- A Groq API key
+
+---
+
+# Environment Variables
+
+Create a `.env` file in the project root.
+
+Example:
+
+```env
+GROQ_API_KEY=your_groq_api_key
+
+MAX_UPLOAD_SIZE_MB=10
+
+FRONTEND_URL=http://localhost:3000
+```
+
+Use `.env.example` as the template for the complete configuration.
+
+**Never commit your real API key to Git.**
+
+---
+
+# Running Locally
+
+## 1. Clone the repository
+
+```powershell
+git clone <your-repository-url>
+cd Agentic-Adaptive-RAG
+```
+
+## 2. Create a virtual environment
+
+```powershell
+python -m venv .venv
+```
+
+Activate it:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+## 3. Install dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+## 4. Configure environment variables
+
+Create `.env` and add your API configuration.
+
+## 5. Start the backend
+
+```powershell
+uvicorn backend.api:api --reload
+```
+
+Backend:
+
+```text
+http://localhost:8000
+```
+
+Swagger documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+Health check:
+
+```text
+http://localhost:8000/health
+```
+
+## 6. Start the frontend
+
+Open another terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend:
+
+```text
+http://localhost:3000
+```
+
+---
+
+# Running with Docker
+
+Docker Compose is provided for running the complete application.
+
+Make sure **Docker Desktop is running** before executing the commands below.
+
+From the project root:
+
+```powershell
+docker compose build
+```
+
+Start the application:
+
+```powershell
+docker compose up
+```
+
+Or run in detached mode:
+
+```powershell
+docker compose up -d
+```
+
+The services are exposed at:
+
+```text
+Frontend:
+http://localhost:3000
+
+Backend:
+http://localhost:8000
+
+API documentation:
+http://localhost:8000/docs
+```
+
+Check container status:
+
+```powershell
+docker compose ps
+```
+
+View logs:
+
+```powershell
+docker compose logs -f
+```
+
+Stop the application:
+
+```powershell
+docker compose down
+```
+
+---
+
+# API
+
+The FastAPI backend exposes endpoints for:
+
+- Health checks
+- Document upload
+- Document management
+- Chat/query execution
+- Evaluation
+- Observability
+
+Interactive API documentation is available through:
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+# Testing
+
+The project includes automated tests covering the core agent, evaluation, response, and security components.
+
+Run the complete test suite:
+
+```powershell
+python -m pytest -v
+```
+
+Current verification:
+
+```text
+33 passed
+```
+
+The test suite covers:
+
+```text
+✓ Retrieval grading
+✓ Hallucination grading
+✓ Answer grading
+✓ Query routing
+✓ Local RAG path
+✓ Web-search fallback
+✓ Generation retries
+✓ Quality gates
+✓ Evaluation tracking
+✓ Response validation
+✓ Prompt injection protection
+✓ System prompt extraction protection
+✓ Jailbreak detection
+✓ Document injection detection
+✓ Untrusted content handling
+✓ Secret redaction
+✓ Output protection
+```
+
+---
+
+# Example Workflow
+
+### Step 1 — Upload a document
+
+Upload a supported document through the application.
+
+```text
+PDF / DOCX / TXT / MD
+          │
+          ▼
+      Ingestion
+          │
+          ▼
+      Chunking
+          │
+          ▼
+   Vector Storage
+```
+
+### Step 2 — Ask a question
+
+```text
+"What are the main conclusions of this document?"
+```
+
+### Step 3 — Agent processes the question
+
+```text
+Question
+   ↓
+Security Check
+   ↓
+Route
+   ↓
+Retrieve
+   ↓
+Grade Documents
+   ↓
+Generate
+   ↓
+Check Grounding
+   ↓
+Check Answer Quality
+   ↓
+Final Response
+```
+
+### Step 4 — Inspect execution
+
+Use the observability interface to inspect the execution path and evaluation information.
+
+---
+
+# Why This Project Is Agentic
+
+A conventional RAG pipeline might look like:
+
+```text
+Question
+   ↓
+Vector Search
+   ↓
+LLM
+   ↓
+Answer
+```
+
+This project introduces decision-making and feedback loops:
+
+```text
+                         ┌───────────────┐
+                         │    Router     │
+                         └───────┬───────┘
+                                 │
+                   ┌─────────────┴─────────────┐
+                   ▼                           ▼
+             Local Retrieval              Web Search
+                   │
+                   ▼
+           Retrieval Grader
+                   │
+            ┌──────┴──────┐
+            ▼             ▼
+         Relevant      Not Relevant
+            │             │
+            └──────┬──────┘
+                   ▼
+               Generation
+                   │
+                   ▼
+          Hallucination Check
+                   │
+                   ▼
+             Answer Check
+                   │
+            ┌──────┴──────┐
+            ▼             ▼
+          Accept         Retry
+                            │
+                            └──────► Generation
+```
+
+The system therefore combines:
+
+- Routing
+- Tool selection
+- Retrieval
+- Evaluation
+- Feedback
+- Retry
+- Human approval
+
+within a stateful LangGraph workflow.
+
+---
+
+# Engineering Highlights
+
+### Adaptive Retrieval
+
+Rather than assuming vector search is always sufficient, the system evaluates retrieval quality and can transition to external search.
+
+### Self-Evaluation
+
+The system evaluates both retrieved evidence and generated responses.
+
+### Quality-Controlled Generation
+
+Generation is not automatically accepted. Hallucination and answer-quality checks determine whether the response should be returned or regenerated.
+
+### Security-Aware RAG
+
+Documents and external content are treated as potentially untrusted input, with dedicated controls for prompt injection and output leakage.
+
+### Observability
+
+Agent execution information is recorded so the behavior of the system can be analyzed.
+
+### Containerized Deployment
+
+Both frontend and backend are containerized and orchestrated using Docker Compose.
+
+---
+
+# Testing Philosophy
+
+The project tests the behavior of individual components as well as the agent workflow.
+
+The goal is not simply to verify that functions execute successfully, but to validate important agent behaviors:
+
+```text
+Routing
+Retrieval
+Fallback
+Generation
+Validation
+Retry
+Security
+Evaluation
+```
+
+---
+
+# Future Improvements
+
+The current implementation focuses on the core Agentic RAG architecture.
+
+Potential future production improvements include:
+
+- Authentication and authorization
+- API rate limiting
+- Advanced document malware scanning
+- More comprehensive file-type validation
+- ZIP/archive resource limits
+- Dependency vulnerability scanning
+- Container image scanning
+- Distributed observability
+- Production vector database
+- Background document processing
+- Streaming responses
+- Advanced RAG evaluation dashboards
+- Persistent conversation memory
+- Multi-user support
+- Cloud deployment
+
+These are intentionally treated as future production-hardening improvements rather than prerequisites for the current system.
+
+---
+
+# Project Status
+
+| Component | Status |
+|---|---|
+| Agentic workflow | ✅ |
+| LangGraph orchestration | ✅ |
+| Adaptive routing | ✅ |
+| Vector retrieval | ✅ |
+| Web-search fallback | ✅ |
+| Retrieval grading | ✅ |
+| Hallucination grading | ✅ |
+| Answer grading | ✅ |
+| Generation retry | ✅ |
+| Human-in-the-loop | ✅ |
+| Security layer | ✅ |
+| Evaluation | ✅ |
+| Observability | ✅ |
+| FastAPI backend | ✅ |
+| Next.js frontend | ✅ |
+| Docker backend | ✅ |
+| Docker frontend | ✅ |
+| Automated tests | ✅ 33 passed |
+
+---
+
+# Resume Description
+
+### Agentic Adaptive RAG
+
+**Agentic AI / Generative AI Project**
+
+- Built a LangGraph-based Agentic RAG system with adaptive routing between local vector retrieval and web search based on query requirements and retrieval quality.
+- Implemented retrieval grading, hallucination detection, answer-quality validation, and automated generation retries to improve response reliability.
+- Developed security controls for prompt injection, jailbreak attempts, document-based instruction injection, and sensitive secret leakage.
+- Added evaluation tracking and execution observability covering routing, retrieval, grounding, retries, latency, and source usage.
+- Developed a FastAPI backend and Next.js frontend with Dockerized deployment using Docker Compose.
+- Achieved **33/33 automated tests passing** across agent workflows, evaluation, response validation, and security controls.
+
+---
+
+# License
+
+This project is intended as a portfolio and learning project.
+
+Add your preferred license here if the repository is published publicly.
+
+---
+
+# Author
+
+**Mohamed Shaad**
+
+Machine Learning Engineer | Generative AI | Agentic AI | LLM Systems
+
+```text
+Python • LangGraph • LangChain • RAG • LLMs
+FastAPI • Docker • Vector Search • Generative AI
+```
