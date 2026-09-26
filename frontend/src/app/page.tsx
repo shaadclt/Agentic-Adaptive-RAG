@@ -68,6 +68,7 @@ export default function Home() {
 
   const [pendingApproval, setPendingApproval] = useState(false);
   const [approvalReason, setApprovalReason] = useState("");
+  const [threadId, setThreadId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -232,6 +233,7 @@ export default function Home() {
       setResponse(null);
       setPendingApproval(false);
       setApprovalReason("");
+      setThreadId(null);
 
       const res = await fetch(`${API_URL}/chat`, {
         method: "POST",
@@ -257,6 +259,10 @@ export default function Home() {
       setQuestion("");
 
       setResponse(data);
+
+      if (typeof data.thread_id === "string") {
+        setThreadId(data.thread_id);
+      }
 
       /*
        * Human-in-the-loop:
@@ -289,6 +295,11 @@ export default function Home() {
   }
 
   async function submitApproval(approved: boolean) {
+    if (!threadId) {
+      setError("Approval session expired. Please ask the question again.");
+      return;
+    }
+
     try {
       setAsking(true);
       setError("");
@@ -300,6 +311,7 @@ export default function Home() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          thread_id: threadId,
           approved,
         }),
       });
@@ -317,6 +329,10 @@ export default function Home() {
       setResponse(data);
       setPendingApproval(false);
       setApprovalReason("");
+
+      if (typeof data.thread_id === "string") {
+        setThreadId(data.thread_id);
+      }
     } catch (err) {
       setError(
         err instanceof Error
