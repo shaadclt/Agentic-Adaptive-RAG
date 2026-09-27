@@ -395,6 +395,27 @@ export default function Home() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">
+            {/* PRIMARY NAVIGATION */}
+            <div className="mb-7 border-b border-slate-800 pb-5">
+              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Workspace
+              </p>
+
+              <a
+                href="/evaluation"
+                className="mb-1 block rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              >
+                Evaluation
+              </a>
+
+              <a
+                href="/observability"
+                className="block rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              >
+                Observability
+              </a>
+            </div>
+
             <div className="mb-5">
               <div className="flex items-center justify-between">
                 <div>
@@ -543,22 +564,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* SIDEBAR LINKS */}
-          <div className="border-t border-slate-800 p-4">
-            <a
-              href="/evaluation"
-              className="mb-2 block rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
-            >
-              Evaluation
-            </a>
-
-            <a
-              href="/observability"
-              className="block rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
-            >
-              Observability
-            </a>
-          </div>
         </aside>
 
         {/* MAIN */}
