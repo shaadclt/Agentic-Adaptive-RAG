@@ -85,8 +85,8 @@ function MetricCard({
   description: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-      <div className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
+      <div className="text-xs font-medium uppercase tracking-wider text-slate-400">
         {label}
       </div>
 
@@ -94,7 +94,7 @@ function MetricCard({
         {value}
       </div>
 
-      <div className="mt-1 text-xs text-zinc-500">
+      <div className="mt-1 text-xs text-slate-400">
         {description}
       </div>
     </div>
@@ -243,23 +243,23 @@ export default function EvaluationPage() {
     };
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-white">
-      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+    <main className="min-h-screen bg-[#020617] text-white">
+      <div className="mx-auto max-w-[1800px] px-5 py-8 sm:px-8 lg:px-10">
         {/* Header */}
-        <div className="flex flex-col gap-5 border-b border-white/10 pb-7 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-6 border-b border-slate-800 pb-10 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <Link
               href="/"
-              className="text-sm text-zinc-500 transition hover:text-white"
+              className="mb-3 inline-flex text-sm font-semibold uppercase tracking-[0.25em] text-slate-400 transition hover:text-white"
             >
               ← Back to RAG
             </Link>
 
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
               Evaluation
             </h1>
 
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+            <p className="mt-4 max-w-3xl text-base leading-7 text-slate-400">
               Track answer quality, grounding,
               retrieval relevance, retries and
               latency across live RAG requests.
@@ -270,7 +270,7 @@ export default function EvaluationPage() {
             <button
               onClick={loadEvaluation}
               disabled={loading}
-              className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading
                 ? "Refreshing..."
@@ -283,7 +283,7 @@ export default function EvaluationPage() {
                 clearing ||
                 summary.total_questions === 0
               }
-              className="rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-2.5 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-2xl border border-red-900/70 bg-red-950/30 px-5 py-3 text-sm font-medium text-red-300 transition hover:border-red-800 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {clearing
                 ? "Clearing..."
@@ -301,7 +301,7 @@ export default function EvaluationPage() {
 
         {/* Loading */}
         {loading && !data && (
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-10 text-center text-sm text-zinc-500">
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-950/60 p-10 text-center text-sm text-slate-400">
             Loading evaluation data...
           </div>
         )}
@@ -375,36 +375,36 @@ export default function EvaluationPage() {
 
         {/* Evaluation explanation */}
         <section className="mt-8 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
             <div className="text-sm font-semibold text-white">
               Groundedness
             </div>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
+            <p className="mt-2 text-sm leading-6 text-slate-400">
               Measures whether the generated
               response was judged to be supported
               by the retrieved evidence.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
             <div className="text-sm font-semibold text-white">
               Answer quality
             </div>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
+            <p className="mt-2 text-sm leading-6 text-slate-400">
               Tracks whether the final answer passed
               the question-answer quality gate in
               the agentic workflow.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
             <div className="text-sm font-semibold text-white">
               Retrieval relevance
             </div>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
+            <p className="mt-2 text-sm leading-6 text-slate-400">
               Compares relevant retrieved documents
               against the total number of retrieved
               documents.
@@ -420,61 +420,61 @@ export default function EvaluationPage() {
                 Evaluation history
               </h2>
 
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-slate-400">
                 Individual live RAG evaluations.
               </p>
             </div>
 
-            <div className="text-xs text-zinc-600">
+            <div className="text-xs text-slate-500">
               {summary.total_questions} records
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40">
             {data?.results?.length ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1100px] text-left">
-                  <thead className="border-b border-white/10 bg-white/[0.03]">
+                  <thead className="border-b border-slate-800 bg-slate-950/60">
                     <tr>
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Question
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Route
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Retrieval
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Grounded
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Quality
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Latency
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Retries
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Status
                       </th>
 
-                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      <th className="px-5 py-4 text-xs font-medium uppercase tracking-wider text-slate-400">
                         Time
                       </th>
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-white/5">
+                  <tbody className="divide-y divide-slate-800">
                     {data.results
                       .slice()
                       .reverse()
@@ -485,11 +485,11 @@ export default function EvaluationPage() {
                         ) => (
                           <tr
                             key={`${result.timestamp}-${index}`}
-                            className="transition hover:bg-white/[0.025]"
+                            className="transition hover:bg-slate-950/50"
                           >
                             <td className="max-w-[300px] px-5 py-4">
                               <div
-                                className="text-sm font-medium text-zinc-200"
+                                className="text-sm font-medium text-slate-200"
                                 title={
                                   result.question
                                 }
@@ -518,14 +518,14 @@ export default function EvaluationPage() {
                               />
                             </td>
 
-                            <td className="px-5 py-4 text-sm text-zinc-400">
+                            <td className="px-5 py-4 text-sm text-slate-400">
                               {result.relevant_documents}
                               /
                               {
                                 result.retrieved_documents
                               }
 
-                              <div className="mt-1 text-xs text-zinc-600">
+                              <div className="mt-1 text-xs text-slate-500">
                                 {formatPercent(
                                   result.retrieval_relevance_rate
                                 )}
@@ -560,13 +560,13 @@ export default function EvaluationPage() {
                               </span>
                             </td>
 
-                            <td className="px-5 py-4 text-sm text-zinc-400">
+                            <td className="px-5 py-4 text-sm text-slate-400">
                               {formatLatency(
                                 result.latency_seconds
                               )}
                             </td>
 
-                            <td className="px-5 py-4 text-sm text-zinc-400">
+                            <td className="px-5 py-4 text-sm text-slate-400">
                               {result.retry_count}
                             </td>
 
@@ -578,7 +578,7 @@ export default function EvaluationPage() {
                               />
                             </td>
 
-                            <td className="whitespace-nowrap px-5 py-4 text-xs text-zinc-600">
+                            <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">
                               {formatDate(
                                 result.timestamp
                               )}
@@ -591,18 +591,18 @@ export default function EvaluationPage() {
               </div>
             ) : (
               <div className="p-12 text-center">
-                <div className="text-sm font-medium text-zinc-300">
+                <div className="text-sm font-medium text-slate-300">
                   No evaluations yet
                 </div>
 
-                <p className="mt-2 text-sm text-zinc-600">
+                <p className="mt-2 text-sm text-slate-500">
                   Ask a question in the RAG application
                   and the result will appear here.
                 </p>
 
                 <Link
                   href="/"
-                  className="mt-5 inline-flex rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.09]"
+                  className="mt-5 inline-flex rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
                 >
                   Ask a question
                 </Link>
