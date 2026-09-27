@@ -375,11 +375,11 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-zinc-100">
+    <main className="min-h-screen bg-[#020617] text-slate-100">
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
-        <aside className="hidden w-[320px] shrink-0 border-r border-zinc-800 bg-[#0d0d0f] lg:flex lg:flex-col">
-          <div className="border-b border-zinc-800 px-6 py-5">
+        <aside className="hidden w-[340px] shrink-0 border-r border-slate-800 bg-[#020617] lg:flex lg:flex-col">
+          <div className="border-b border-slate-800 px-6 py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-black">
                 <span className="text-lg font-bold">A</span>
@@ -387,7 +387,7 @@ export default function Home() {
 
               <div>
                 <h1 className="font-semibold">Agentic Adaptive RAG</h1>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-slate-400">
                   Knowledge Intelligence
                 </p>
               </div>
@@ -399,19 +399,19 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium">Knowledge Base</p>
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-slate-400">
                     Your uploaded documents
                   </p>
                 </div>
 
-                <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-400">
+                <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-400">
                   {documents.length}
                 </span>
               </div>
             </div>
 
             {/* UPLOAD */}
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
               <label className="mb-3 block text-sm font-medium">
                 Add documents
               </label>
@@ -422,10 +422,10 @@ export default function Home() {
                 multiple
                 accept=".pdf,.docx,.txt,.md"
                 onChange={handleFileChange}
-                className="block w-full cursor-pointer rounded-xl border border-zinc-700 bg-zinc-950 p-2 text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-zinc-200 hover:file:bg-zinc-700"
+                className="block w-full cursor-pointer rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-200 hover:file:bg-slate-700"
               />
 
-              <p className="mt-2 text-[11px] leading-4 text-zinc-600">
+              <p className="mt-2 text-[11px] leading-4 text-slate-500">
                 Supported: PDF, DOCX, TXT, Markdown
               </p>
 
@@ -434,13 +434,13 @@ export default function Home() {
                   {selectedFiles.map((file, index) => (
                     <div
                       key={`${file.name}-${index}`}
-                      className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2"
+                      className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
                     >
                       <div className="min-w-0 pr-3">
-                        <p className="truncate text-xs text-zinc-300">
+                        <p className="truncate text-xs text-slate-300">
                           {file.name}
                         </p>
-                        <p className="text-[10px] text-zinc-600">
+                        <p className="text-[10px] text-slate-500">
                           {(file.size / 1024).toFixed(1)} KB
                         </p>
                       </div>
@@ -448,7 +448,7 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => removeSelectedFile(index)}
-                        className="text-xs text-zinc-500 hover:text-red-400"
+                        className="text-xs text-slate-400 hover:text-red-300"
                       >
                         Remove
                       </button>
@@ -459,7 +459,7 @@ export default function Home() {
                     type="button"
                     onClick={uploadFiles}
                     disabled={uploading}
-                    className="mt-2 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-2 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {uploading ? "Uploading..." : "Upload documents"}
                   </button>
@@ -470,7 +470,7 @@ export default function Home() {
             {/* DOCUMENTS */}
             <div className="mt-6">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                   Documents
                 </p>
 
@@ -478,22 +478,22 @@ export default function Home() {
                   type="button"
                   onClick={loadDocuments}
                   disabled={loadingDocuments}
-                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                  className="text-xs text-slate-400 hover:text-slate-300"
                 >
                   Refresh
                 </button>
               </div>
 
               {loadingDocuments ? (
-                <div className="rounded-xl border border-zinc-800 p-4 text-center text-xs text-zinc-500">
+                <div className="rounded-xl border border-slate-800 p-4 text-center text-xs text-slate-400">
                   Loading documents...
                 </div>
               ) : documents.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-zinc-800 p-5 text-center">
-                  <p className="text-sm text-zinc-500">
+                <div className="rounded-xl border border-dashed border-slate-800 p-5 text-center">
+                  <p className="text-sm text-slate-400">
                     No documents uploaded
                   </p>
-                  <p className="mt-1 text-xs text-zinc-700">
+                  <p className="mt-1 text-xs text-slate-600">
                     Upload files to build your knowledge base.
                   </p>
                 </div>
@@ -502,18 +502,18 @@ export default function Home() {
                   {documents.map((document) => (
                     <div
                       key={document.document_id}
-                      className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
+                      className="group rounded-xl border border-slate-800 bg-slate-900/40 p-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p
-                            className="truncate text-sm text-zinc-300"
+                            className="truncate text-sm text-slate-300"
                             title={document.file_name}
                           >
                             {document.file_name}
                           </p>
 
-                          <p className="mt-1 text-[10px] uppercase text-zinc-600">
+                          <p className="mt-1 text-[10px] uppercase text-slate-500">
                             {document.file_type ||
                               document.file_name
                                 ?.split(".")
@@ -529,7 +529,7 @@ export default function Home() {
                             deleteDocument(document.document_id)
                           }
                           disabled={deletingId === document.document_id}
-                          className="text-xs text-zinc-600 opacity-0 transition group-hover:opacity-100 hover:text-red-400 disabled:opacity-50"
+                          className="text-xs text-slate-500 opacity-0 transition group-hover:opacity-100 hover:text-red-300 disabled:opacity-50"
                         >
                           {deletingId === document.document_id
                             ? "..."
@@ -544,17 +544,17 @@ export default function Home() {
           </div>
 
           {/* SIDEBAR LINKS */}
-          <div className="border-t border-zinc-800 p-4">
+          <div className="border-t border-slate-800 p-4">
             <a
               href="/evaluation"
-              className="mb-2 block rounded-xl px-3 py-2.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+              className="mb-2 block rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
             >
               Evaluation
             </a>
 
             <a
               href="/observability"
-              className="block rounded-xl px-3 py-2.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+              className="block rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
             >
               Observability
             </a>
@@ -564,11 +564,11 @@ export default function Home() {
         {/* MAIN */}
         <section className="flex min-w-0 flex-1 flex-col">
           {/* MOBILE HEADER */}
-          <header className="border-b border-zinc-800 bg-[#0d0d0f] px-5 py-4 lg:hidden">
+          <header className="border-b border-slate-800 bg-[#020617] px-5 py-4 lg:hidden">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="font-semibold">Agentic Adaptive RAG</h1>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-slate-400">
                   Knowledge Intelligence
                 </p>
               </div>
@@ -576,14 +576,14 @@ export default function Home() {
               <div className="flex gap-2">
                 <a
                   href="/evaluation"
-                  className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400"
+                  className="rounded-lg border border-slate-800 px-3 py-2 text-xs text-slate-400"
                 >
                   Evaluation
                 </a>
 
                 <a
                   href="/observability"
-                  className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400"
+                  className="rounded-lg border border-slate-800 px-3 py-2 text-xs text-slate-400"
                 >
                   Observability
                 </a>
@@ -591,18 +591,18 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 md:px-8 lg:py-12">
+          <div className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 md:px-8 lg:py-12">
             {/* HEADER */}
             <div className="mb-10">
-              <div className="mb-3 inline-flex rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-500">
+              <div className="mb-4 inline-flex rounded-full border border-slate-800 bg-slate-900/80 px-3 py-1.5 text-xs font-medium tracking-wide text-slate-400">
                 Agentic Retrieval • Adaptive Routing • Grounded Generation
               </div>
 
-              <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
+              <h2 className="text-4xl font-bold tracking-tight sm:text-5xl">
                 Ask your knowledge base
               </h2>
 
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500 md:text-base">
+              <p className="mt-4 max-w-3xl text-base leading-7 text-slate-400">
                 Ask questions about your uploaded documents. The system
                 dynamically decides whether to use local retrieval or web
                 search based on available evidence.
@@ -611,7 +611,7 @@ export default function Home() {
 
             {/* ALERTS */}
             {error && (
-              <div className="mb-5 rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+              <div className="mb-5 rounded-xl border border-red-900/70 bg-red-950/30 px-4 py-3 text-sm text-red-300">
                 {error}
               </div>
             )}
@@ -623,15 +623,15 @@ export default function Home() {
             )}
 
             {/* SECURITY NOTICE */}
-            <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
               <div className="flex gap-3">
-                <div className="mt-0.5 text-zinc-500">✓</div>
+                <div className="mt-0.5 text-slate-400">✓</div>
 
                 <div>
-                  <p className="text-sm font-medium text-zinc-300">
+                  <p className="text-sm font-medium text-slate-300">
                     Security-aware RAG
                   </p>
-                  <p className="mt-1 text-xs leading-5 text-zinc-600">
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
                     Uploaded and retrieved content is treated as untrusted
                     data. Prompt injection and sensitive output patterns are
                     monitored.
@@ -642,7 +642,7 @@ export default function Home() {
 
             {/* ASK FORM */}
             <form onSubmit={askQuestion}>
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/20">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl shadow-black/20">
                 <textarea
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
@@ -650,18 +650,18 @@ export default function Home() {
                   placeholder="Ask something about your documents..."
                   rows={5}
                   disabled={asking}
-                  className="w-full resize-none bg-transparent px-5 py-5 text-sm leading-6 text-zinc-100 outline-none placeholder:text-zinc-700 disabled:opacity-50"
+                  className="w-full resize-none bg-transparent px-5 py-5 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 disabled:opacity-50"
                 />
 
-                <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-3">
-                  <p className="text-[11px] text-zinc-700">
+                <div className="flex items-center justify-between border-t border-slate-800 px-4 py-3">
+                  <p className="text-[11px] text-slate-600">
                     Press Enter to ask · Shift + Enter for a new line
                   </p>
 
                   <button
                     type="submit"
                     disabled={asking || !question.trim()}
-                    className="rounded-xl bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {asking ? "Thinking..." : "Ask Agent"}
                   </button>
@@ -714,32 +714,32 @@ export default function Home() {
               <div className="mt-8 space-y-5">
                 {/* SUBMITTED QUESTION */}
                 {submittedQuestion && (
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
-                    <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5">
+                    <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
                       Submitted question
                     </p>
 
-                    <p className="text-sm leading-6 text-zinc-300">
+                    <p className="text-sm leading-6 text-slate-300">
                       {submittedQuestion}
                     </p>
                   </div>
                 )}
 
                 {/* ANSWER */}
-                <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-6">
                   <div className="mb-5 flex items-center justify-between">
-                    <h3 className="text-sm font-medium text-zinc-300">
+                    <h3 className="text-sm font-medium text-slate-300">
                       Answer
                     </h3>
 
                     {response.route && (
-                      <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                      <span className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1 text-[10px] uppercase tracking-wider text-slate-400">
                         {String(response.route)}
                       </span>
                     )}
                   </div>
 
-                  <div className="whitespace-pre-wrap text-sm leading-7 text-zinc-300">
+                  <div className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
                     {getAnswer()}
                   </div>
                 </div>
@@ -791,20 +791,20 @@ export default function Home() {
 
                 {/* SECURITY */}
                 {response.security_status && (
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-zinc-300">
+                        <p className="text-sm font-medium text-slate-300">
                           Security status
                         </p>
 
-                        <p className="mt-1 text-xs text-zinc-600">
+                        <p className="mt-1 text-xs text-slate-500">
                           {response.security_reason ||
                             "Security checks completed."}
                         </p>
                       </div>
 
-                      <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-400">
+                      <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
                         {response.security_status}
                       </span>
                     </div>
@@ -823,13 +823,13 @@ export default function Home() {
                 {/* SOURCES */}
                 {Array.isArray(response.sources) &&
                   response.sources.length > 0 && (
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                       <div className="mb-4">
-                        <h3 className="text-sm font-medium text-zinc-300">
+                        <h3 className="text-sm font-medium text-slate-300">
                           Sources
                         </h3>
 
-                        <p className="mt-1 text-xs text-zinc-600">
+                        <p className="mt-1 text-xs text-slate-500">
                           Evidence used to produce this response
                         </p>
                       </div>
@@ -838,15 +838,15 @@ export default function Home() {
                         {response.sources.map((source, index) => (
                           <div
                             key={`${source.url || source.source || index}-${index}`}
-                            className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
+                            className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
                           >
                             <div className="flex items-start gap-3">
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-[10px] text-zinc-500">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-[10px] text-slate-400">
                                 {index + 1}
                               </span>
 
                               <div className="min-w-0">
-                                <p className="text-sm text-zinc-300">
+                                <p className="text-sm text-slate-300">
                                   {formatSourceName(source)}
                                 </p>
 
@@ -855,7 +855,7 @@ export default function Home() {
                                     href={source.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="mt-1 block truncate text-xs text-zinc-600 hover:text-zinc-400"
+                                    className="mt-1 block truncate text-xs text-slate-500 hover:text-slate-400"
                                   >
                                     {source.url}
                                   </a>
@@ -863,7 +863,7 @@ export default function Home() {
 
                                 {source.type === "local" &&
                                   source.document_id && (
-                                    <p className="mt-1 truncate text-xs text-zinc-700">
+                                    <p className="mt-1 truncate text-xs text-slate-600">
                                       Document ID: {source.document_id}
                                     </p>
                                   )}
@@ -891,12 +891,12 @@ function Metric({
   value: string | number;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-      <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+      <p className="text-[10px] uppercase tracking-wider text-slate-500">
         {label}
       </p>
 
-      <p className="mt-2 text-xl font-semibold text-zinc-300">{value}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-300">{value}</p>
     </div>
   );
 }
@@ -917,12 +917,12 @@ function StatusCard({
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-      <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+      <p className="text-[10px] uppercase tracking-wider text-slate-500">
         {label}
       </p>
 
-      <p className="mt-2 text-sm font-medium text-zinc-300">{displayValue}</p>
+      <p className="mt-2 text-sm font-medium text-slate-300">{displayValue}</p>
     </div>
   );
 }
